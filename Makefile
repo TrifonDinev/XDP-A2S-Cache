@@ -17,7 +17,7 @@ INCLUDES = -I/usr/local/include -I/usr/include -I$(LIB_BPF_SRC) -I$(COMMON_DIR)
 # XDP (BPF) compiler flags
 CFLAGS_BPF = -D__BPF__ -D__BPF_TRACING__ \
              -Wno-unused-value -Wno-pointer-sign -Wno-compare-distinct-pointer-types \
-             -O2 -c -g -target bpf
+             -O2 -c -g -target bpf -MMD -MP
 
 # =============================================================================
 # Directory Paths
@@ -53,7 +53,7 @@ LIB_XDP_OBJS        = $(addprefix $(LIB_XDP_DIR)/sharedobjs/, $(notdir $(wildcar
 # =============================================================================
 -include $(LOADER_UTILS_OBJS:.o=.d)
 -include $(LOADER_OBJ:.o=.d)
-#-include $(XDP_PROG_OBJ:.o=.d)
+-include $(XDP_PROG_OBJ:.o=.d)
 
 # =============================================================================
 # Targets
