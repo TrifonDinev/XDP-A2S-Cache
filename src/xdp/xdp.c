@@ -64,9 +64,8 @@ int xdpa2scache_program(struct xdp_md *ctx)
   }
 
   void *payload = (void *)(udph + 1);
-  __u32 payload_u32 = *((__u32 *)payload);
 
-  if (payload + 8 <= data_end && payload_u32 == 0xFFFFFFFF)
+  if (payload + 9 <= data_end && *((__u32 *)payload) == 0xFFFFFFFF)
   {
     struct a2s_server_key key = {0};
     key.ip = iph->daddr;
@@ -97,7 +96,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
         : bpf_map_lookup_elem(&a2s_rules, &key);
 
         // The Steam (?) and TF2 server browser seem to be sending 00000000 now for the challenge request instead of the previously used FFFFFFFF
-        is_challenge = (payload_u32 + 5 == 0x00000000);
+        is_challenge = (*(__u32 *)(payload + 5) == 0x00000000);
       }
       break;
 
