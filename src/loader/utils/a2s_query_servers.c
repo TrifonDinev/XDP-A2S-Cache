@@ -38,7 +38,6 @@ void *a2s_query_servers(void *args)
   {
     for (int i = 0; i < config->server_count; i++)
     {
-      // Skip servers with an invalid (NULL) IP address
       if (config->servers[i].ip == NULL) continue;
 
       // Prepare socket only once for the server
@@ -92,13 +91,18 @@ void *a2s_query_servers(void *args)
 
           for (int i = 0; i < sizeof(maps) / sizeof(maps[0]); i++)
           {
-            // Delete the element from the map if it exists
+            // Attempt to delete the element from the map if it exists
             if (bpf_map_lookup_elem(maps[i], &xdp_key, &val) == 0)
             {
               #ifdef A2S_DEBUG
               // Print which map and key is being deleted
-              printf("Deleting unresponsive server from map: %s\n", map_names[i]);
-              printf("Key: IP = 0x%X, Port = %d\n", xdp_key.ip, ntohs(xdp_key.port));
+              printf("Deleting unresponsive server with key from map: %s\n", map_names[i]);
+              printf("Key: IP = %u.%u.%u.%u, Port = %d\n",
+              xdp_key.ip & 0xFF,
+              (xdp_key.ip >> 8) & 0xFF,
+              (xdp_key.ip >> 16) & 0xFF,
+              (xdp_key.ip >> 24) & 0xFF,
+              ntohs(xdp_key.port));
               #endif
 
               // Delete the element from the map
@@ -114,10 +118,15 @@ void *a2s_query_servers(void *args)
         // Handle challenge if present
         if (buffer[4] == A2S_CHALLENGE)
         {
-          int challenge_number = *(int *)(buffer + 5);
-
           #ifdef A2S_DEBUG
-          printf("Challenge detected, number: %d\n", challenge_number);
+          printf("Raw challenge bytes (Hex): ");
+
+          for (int i = 0; i < 4; i++)
+          {
+            printf("%02X ", (unsigned char)buffer[5 + i]);
+          }
+
+          printf("\n");
           #endif
 
           size_t challenge_resp_size = 0;
@@ -125,18 +134,32 @@ void *a2s_query_servers(void *args)
 
           if (query_types[j].query_type == A2S_INFO)
           {
+            // Copy original request data (first 25 bytes)
             memcpy(challenge_response, query_types[j].request_data, 25);
-            memcpy(challenge_response + 25, &challenge_number, sizeof(challenge_number));
+
+            // Append the raw 4 challenge bytes exactly as received
+            memcpy(challenge_response + 25, buffer + 5, 4);
+
+            // Total challenge response size: 25 (request data) + 4 (challenge bytes)
             challenge_resp_size = 29;
           }
           else
           {
+            // For other queries (A2S_PLAYERS and A2S_RULES):
+            // Copy 4-byte header 0xFF 0xFF 0xFF 0xFF
             memcpy(challenge_response, "\xFF\xFF\xFF\xFF", 4);
+
+            // Set query type byte (A2S_PLAYERS or A2S_RULES)
             challenge_response[4] = query_types[j].query_type;
-            memcpy(challenge_response + 5, &challenge_number, sizeof(challenge_number));
+
+            // Append the raw 4 challenge bytes exactly as received
+            memcpy(challenge_response + 5, buffer + 5, 4);
+
+            // Total challenge response size: 4 (header) + 1 (query type) + 4 (challenge bytes)
             challenge_resp_size = 9;
           }
 
+          // Send challenge response
           if (socket_client_send(&client, challenge_response, challenge_resp_size) != challenge_resp_size)
           {
             #ifdef A2S_DEBUG
@@ -145,6 +168,7 @@ void *a2s_query_servers(void *args)
             continue;
           }
 
+          // Receive response after challenge
           n = socket_client_recv(&client, buffer, A2S_MAX_SIZE);
           if (n <= 0)
           {
@@ -154,18 +178,25 @@ void *a2s_query_servers(void *args)
             continue;
           }
 
-          // Null-terminate the received data for safety
+          // Null-terminate for safety
           buffer[n] = '\0';
         }
 
-        // Fill the value structure
+        // Fill the value structure with the data from the server response
         val.size = n;
         memcpy(val.data, buffer, n);
 
         #ifdef A2S_DEBUG
-        printf("Received valid data, filling map: IP = 0x%X, Port = %d, Value size = %llu\n", xdp_key.ip, ntohs(xdp_key.port), val.size);
+        printf("Received valid data, filling map: IP = %u.%u.%u.%u, Port = %d, Value size = %llu\n",
+        xdp_key.ip & 0xFF,
+        (xdp_key.ip >> 8) & 0xFF,
+        (xdp_key.ip >> 16) & 0xFF,
+        (xdp_key.ip >> 24) & 0xFF,
+        ntohs(xdp_key.port),
+        val.size);
         #endif
 
+        // Update the XDP maps based on query type
         int update_result = -1;
         switch (query_types[j].query_type)
         {
