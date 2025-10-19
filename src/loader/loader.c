@@ -74,10 +74,4 @@ int main()
 
   // Keep the program running
   pause();
-
-  // Close the XDP program
-  xdp_program__close(prog);
-
-  // Exit program successfully
-  return EXIT_SUCCESS;
 }
