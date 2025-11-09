@@ -97,9 +97,6 @@ void parse_config_file(struct server_config *cfg)
     exit(EXIT_FAILURE);
   }
 
-  cfg->server_count = count;
-  printf("Loaded %d server(s) from configuration.\n", cfg->server_count);
-
   for (int i = 0; i < count; i++)
   {
     config_setting_t *server = config_setting_get_elem(servers, i);
@@ -145,6 +142,10 @@ void parse_config_file(struct server_config *cfg)
 
     cfg->servers[i].port = port;
   }
+
+  // Print how much servers we loaded from the configuration.
+  cfg->server_count = count;
+  printf(count == 1 ? "Loaded 1 server from configuration.\n" : "Loaded %d servers from configuration.\n", count);
 
   config_destroy(&config);
 }
