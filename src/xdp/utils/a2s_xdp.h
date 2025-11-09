@@ -42,8 +42,8 @@ static __always_inline int send_a2s_challenge(struct xdp_md *ctx)
   }
 
   // Reinitialize pointers again because of the tail adjustment
-  data_end = (void *)(long)ctx->data_end;
   data = (void *)(long)ctx->data;
+  data_end = (void *)(long)ctx->data_end;
 
   eth = data;
   if (unlikely(eth + 1 > (struct ethhdr *)data_end))
@@ -121,7 +121,6 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
 
   // Get out payload pointer
   void* payload = (void *)udph + sizeof(struct udphdr);
-  __u16 payload_len = ntohs(udph->len) - sizeof(struct udphdr);
 
   // Get the location of the cookie (challenge)
   __u32 *cookie = payload + (query_type == A2S_INFO ? 25 : 5);
@@ -135,6 +134,8 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
   // Validate cookie
   if (check_cookie(iph, udph, *cookie))
   {
+    __u16 payload_len = ntohs(udph->len) - sizeof(struct udphdr);
+
     // Resize packet to fit payload
     if (bpf_xdp_adjust_tail(ctx, val->size - payload_len) != 0)
     {
@@ -142,8 +143,8 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
     }
 
     // Reinitialize pointers again because of the tail adjustment
-    data_end = (void *)(long)ctx->data_end;
     data = (void *)(long)ctx->data;
+    data_end = (void *)(long)ctx->data_end;
 
     eth = data;
     if (unlikely(eth + 1 > (struct ethhdr *)data_end))
