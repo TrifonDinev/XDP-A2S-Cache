@@ -4,12 +4,33 @@ My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Co
 > [!NOTE]
 >
 > Some things that are lacking or need improvement:
->
-> - Fragmentation support: Currently, there's no support for handling fragmented UDP packets (AF_XDP needs to be implemented).
-> - Query data method: The queries method/logic runs every 5 seconds (A2S_QUERY_TIME_SEC), but could be totally changed and optimized for better efficiency.
+> - Fragmentation/Split packets support: Currently, there's no support for handling fragmented UDP packets. AF_XDP and/or [Split packets](https://developer.valvesoftware.com/wiki/Server_queries#Multi-packet_Response_Format) needs to be reviewed for `A2S_PLAYERS` and `A2S_RULES`.
+> - Query data method: The queries method/logic runs every 5 seconds (`A2S_QUERY_TIME_SEC`), but could be totally changed and optimized for better efficiency.
 > - Blocking sockets (synchronous mode): At the moment, blocking sockets are used (with AF_INET), which means if one server times out, the entire query chain waits.
+> ---
+> Some games may only use `A2S_INFO` and `A2S_PLAYERS` queries (or even just `A2S_INFO`), so you can edit the code to drop the unnecessary queries and use only what’s needed.
+>
+> Useful information on fragmentation (current state):
+> - `A2S_INFO`
+>   - Responses are typically small and do not require fragmentation in 99% of cases.
+>
+> - `A2S_PLAYERS`
+>   - Up to 32 players: Working fine (no fragmentation) with maximum player name length (e.g., max "ZZZZZZ"), tested in CS 1.6, or at least in this specific test case.
+>   - For the 33-64 players range: Fragmentation depend on player name length. The exact player count limit with standard name lengths (not maximum) has not been tested, but `A2S_DEBUG` may be useful for your case.
+>
+> - `A2S_RULES`
+>   - Not used or working in some games and you can adjust the code to drop it and not query it at all (I don't know who are still using it and where it is still needed).
+>   - The fragmentation is guaranteed in CS 1.6 for example, broken/deprecated in CS:GO since (1.32.3.0, Feb 21, 2014 update) incl. CS2 as far as I know.
+>
+> To avoid incomplete responses at the moment, keep packet sizes below `A2S_MAX_SIZE` (currently set to `1400` bytes).
 
 ## Supporting and tested on:
+| A2S Query Type     | Description                              |
+|--------------------|----------------------------------------------|
+| A2S_INFO           | Retrieves information about the server including, but not limited to: its name, the map currently being played, and the number of players. |
+| A2S_PLAYERS        | List of players currently in the server.     |
+| A2S_RULES          | Returns the server rules, or configuration variables in name/value pairs. |
+
 | Game                               | Engine                |
 |------------------------------------|-----------------------|
 | Half-Life                          | GoldSrc               |
@@ -24,24 +45,8 @@ My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Co
 | Rust                               | Unity                 |
 | Maybe more games...                | which are not tested...|
 
-> [!CAUTION]
-> Fragmentation support is currently lacking (AF_XDP needs to be implemented) for `A2S_PLAYERS` and `A2S_RULES`.
-> (`A2S_INFO` responses are typically small and do not require fragmentation in 99% of cases.)
-> To avoid incomplete responses, keep packet sizes below `A2S_MAX_SIZE` (currently set to `1400` bytes).
-
-| A2S Query Type     | Description                              |
-|--------------------|----------------------------------------------|
-| A2S_INFO           | Retrieves information about the server including, but not limited to: its name, the map currently being played, and the number of players. |
-| A2S_PLAYERS        | List of players currently in the server.     |
-| A2S_RULES          | Returns the server rules, or configuration variables in name/value pairs. |
-
-> [!NOTE]
-> Some games may use only `A2S_INFO`, so you can edit the code to drop and not query `A2S_PLAYERS` and `A2S_RULES`.
-> `A2S_RULES` are not used or working in some games and you can adjust the code to drop it and not query it at all (I don't know who are still using it and where it is still needed).
-> The fragmentation is guaranteed in CS 1.6 for example, broken/deprecated in CS:GO since (1.32.3.0, Feb 21, 2014 update) incl. CS2 as far as I know.
-
 ## Currently, it works as:
-A config file with interface name and servers to be set up under /etc/xdpa2scache.
+A config file with interface name and servers to be set up under `/etc/xdpa2scache`.
 \
 Upon start, the program will try to load in Driver mode (Native), if there is no driver support ([NIC driver XDP support list](https://github.com/iovisor/bcc/blob/master/docs/kernel-versions.md#xdp)), it will fall back to SKB mode (Generic).
 \
@@ -73,7 +78,7 @@ Use `make` command to build.
 1. Make sure your interface is set up in `/etc/xdpa2scache/config`
 2. Make sure your server(s) ip and port are set
 3. Use `service xdpa2scache start` or `systemctl xdpa2scache start`
- - To enable service on boot: `systemctl enable xdpa2scache.service`
+4. (Optional) To enable the service on boot, use: `systemctl enable xdpa2scache.service`
 
 ## License:
 Licensed under the [MIT License](LICENSE).
