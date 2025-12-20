@@ -84,6 +84,11 @@ int xdpa2scache_program(struct xdp_md *ctx)
       {
         val = bpf_map_lookup_elem(&a2s_info, &key);
         is_challenge = (payload_len == 25);
+
+        #ifdef A2S_DEBUG
+        bpf_printk("A2S Debug: A2S_INFO: Payload Length: %u, Value Size: %u, Is Challenge: %s\n",
+        payload_len, val ? val->size : 0, is_challenge ? "true" : "false");
+        #endif
       }
       break;
 
@@ -97,19 +102,35 @@ int xdpa2scache_program(struct xdp_md *ctx)
 
         // The Steam (?) and TF2 server browser seem to be sending 00000000 now for the challenge request instead of the previously used FFFFFFFF
         is_challenge = (*(__u32 *)(payload + 5) == 0x00000000);
+
+        #ifdef A2S_DEBUG
+        bpf_printk("A2S Debug: A2S_%s: Payload Length: %u, Value Size: %u, Is Challenge: %s\n",
+        (query_type == A2S_PLAYERS) ? "PLAYERS" : "RULES", payload_len, val ? val->size : 0, is_challenge ? "true" : "false");
+        #endif
       }
       break;
 
       // Return XDP_PASS by default, since we need to allow some other things for certain games starting with the same payload!
       // You can DROP here if there is nothing expected than the above A2S queries, starting with the same payload (FF FF FF FF)
       default:
+      #ifdef A2S_DEBUG
+      bpf_printk("A2S Debug: Unknown Query Type: 0x%02x, passing packet.\n", query_type);
+      #endif
       return XDP_PASS;
     }
 
     // If val is not found - DROP
     if (!val)
-    return XDP_DROP;
+    {
+      #ifdef A2S_DEBUG
+      bpf_printk("A2S Debug: Value not found for key (IP: %pI4, Port: %d), dropping packet.\n", &key.ip, ntohs(key.port));
+      #endif
+      return XDP_DROP;
+    }
 
+    #ifdef A2S_DEBUG
+    bpf_printk("A2S Debug: Preparing %s response.\n", is_challenge ? "cookie (challenge)" : "data");
+    #endif
     return is_challenge ? send_a2s_challenge(ctx) : send_a2s_data(ctx, query_type, val);
   }
 

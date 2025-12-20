@@ -38,6 +38,10 @@ static __always_inline int send_a2s_challenge(struct xdp_md *ctx)
   // Adjust the size of the payload when there is a difference
   if (bpf_xdp_adjust_tail(ctx, sizeof(response) - payload_len) != 0)
   {
+    #ifdef A2S_DEBUG
+    bpf_printk("A2S Challenge: Failed to adjust tail size for response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
+    sizeof(response), payload_len, sizeof(response) - payload_len);
+    #endif
     return XDP_DROP;
   }
 
@@ -66,11 +70,22 @@ static __always_inline int send_a2s_challenge(struct xdp_md *ctx)
   void* payload = (void *)udph + sizeof(struct udphdr);
   if (payload + 9 > data_end)
   {
+    #ifdef A2S_DEBUG
+    bpf_printk("A2S Challenge: Insufficient space for 9 byte payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
+    #endif
     return XDP_DROP;
   }
 
   // Write the response to the packet payload
   memcpy(payload, response, sizeof(response));
+
+  #ifdef A2S_DEBUG
+  bpf_printk("A2S Challenge: Crafted cookie (challenge) 0x%x, Full Response: 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", 
+  challenge, response[0], response[1], response[2], response[3], response[4], response[5], response[6], response[7], response[8]);
+  
+  bpf_printk("Sending A2S Challenge: Source IP: %pI4, Source Port: %d, Destination IP: %pI4, Destination Port: %d\n",
+  &iph->daddr, ntohs(udph->dest), &iph->saddr, ntohs(udph->source));
+  #endif
 
   // Swap, calculate checksum, set TTL and reinitialize checksums for Ethernet, IP, and UDP headers
   swap_eth(eth);
@@ -128,17 +143,28 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
   // Make sure we dont go out of range of the packet
   if (unlikely(cookie + 1 > (void *)data_end))
   {
+    #ifdef A2S_DEBUG
+    bpf_printk("A2S Data: Insufficient space for 1 byte cookie (challenge) payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
+    #endif
     return XDP_DROP;
   }
 
   // Validate cookie
   if (check_cookie(iph, udph, *cookie))
   {
+    #ifdef A2S_DEBUG
+    bpf_printk("A2S Data: Cookie (challenge) is valid - 0x%x, proceeding with next steps.\n", *cookie);
+    #endif
+
     __u16 payload_len = ntohs(udph->len) - sizeof(struct udphdr);
 
     // Resize packet to fit payload
     if (bpf_xdp_adjust_tail(ctx, val->size - payload_len) != 0)
     {
+      #ifdef A2S_DEBUG
+      bpf_printk("A2S Data: Failed to adjust tail size for response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
+      val->size, payload_len, val->size - payload_len);
+      #endif
       return XDP_DROP;
     }
 
@@ -167,6 +193,9 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
     payload = (void *)udph + sizeof(struct udphdr);
     if (unlikely(payload + 1 > (void *)data_end))
     {
+      #ifdef A2S_DEBUG
+      bpf_printk("A2S Data: Insufficient space for 1 byte payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
+      #endif
       return XDP_DROP;
     }
 
@@ -184,6 +213,12 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
 
       payload_ptr[i] = val->data[i];
     }
+
+    #ifdef A2S_DEBUG
+    bpf_printk("A2S Data: Crafted %d bytes of data to send.\n", val_data_size);
+    bpf_printk("Sending A2S Data: Source IP: %pI4, Source Port: %d, Destination IP: %pI4, Destination Port: %d\n",
+    &iph->daddr, ntohs(udph->dest), &iph->saddr, ntohs(udph->source));
+    #endif
 
     // Swap, calculate checksum, set TTL and reinitialize checksums for Ethernet, IP, and UDP headers
     swap_eth(eth);
@@ -209,6 +244,9 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
   // I think that it is better to create a map for the sended challenges per src ip/client, so we don't resend one after another endlessly
   else
   {
+    #ifdef A2S_DEBUG
+    bpf_printk("A2S Data: Invalid cookie (challenge), Resending challenge.\n");
+    #endif
     return send_a2s_challenge(ctx);
   }
 }
