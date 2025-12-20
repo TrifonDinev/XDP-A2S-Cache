@@ -80,7 +80,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
     switch (query_type)
     {
       case A2S_INFO:
-      if (payload_len == 29 || payload_len == 25)
+      if (payload_len == 25 || payload_len == 29)
       {
         val = bpf_map_lookup_elem(&a2s_info, &key);
         is_challenge = (payload_len == 25);
