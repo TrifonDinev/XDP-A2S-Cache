@@ -35,32 +35,26 @@ My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Co
 |------------------------------------|-----------------------|
 | Half-Life                          | GoldSrc               |
 | Counter-Strike 1.6 (CS 1.6)        | GoldSrc               |
-| Counter-Strike Condition Zero (CS:CZ) | GoldSrc            |
-| Counter-Strike Source (CS:S)       | Source 1              |
-| Counter-Strike Global Offensive (CS:GO) | Source 1         |
+| Counter-Strike: Condition Zero (CS:CZ) | GoldSrc           |
+| Counter-Strike: Source (CS:S)      | Source 1              |
+| Counter-Strike: Global Offensive (CS:GO) | Source 1        |
 | Counter-Strike 2 (CS2)             | Source 2              |
 | Team Fortress 2 (TF2)              | Source 1              |
 | Left 4 Dead 2 (L4D2)               | Source 1              |
 | Garry's Mod (GM)                   | Source 1              |
+| Half-Life 2 (HL2)                  | Source 1              |
+| Day of Defeat: Source (DoD:S)      | Source 1              |
 | Rust                               | Unity                 |
 | Maybe more games...                | which are not tested...|
 
-## Currently, it works as:
-A config file with interface name and servers to be set up under `/etc/xdpa2scache`.
-\
-Upon start, the program will try to load in Driver mode (Native), if there is no driver support ([NIC driver XDP support list](https://github.com/iovisor/bcc/blob/master/docs/kernel-versions.md#xdp)), it will fall back to SKB mode (Generic).
-\
-The servers are queried every 5 seconds for data (adjustable by `A2S_QUERY_TIME_SEC`)
-
 ## Requirements:
-- A distribution with recommended Linux Kernel >= 5.15
+1. A distribution with recommended Linux Kernel >= 5.15
+ - Tested on:
+   - Debian 12 / 13 (12 September 2025, latest updates)
+   - Ubuntu 24.04 / 25.04 (12 September 2025, latest updates)
 
-- Tested on:
-  - Debian 12 / 13 (12 September 2025, latest updates)
-  - Ubuntu 24.04 / 25.04 (12 September 2025, latest updates)
-
-- Ensure the following packages are installed:
-These packages are installed via `apt` (Ubuntu, Debian, etc.), or similar package names in other package managers.
+2. Ensure the following packages are installed:
+- These packages are installed via `apt` (Ubuntu, Debian, etc.), or similar package names in other package managers.
 ```bash
 # Install dependencies.
 sudo apt install -y clang llvm build-essential libconfig-dev libelf-dev libpcap-dev m4 gcc-multilib
@@ -75,10 +69,15 @@ sudo apt install -y linux-tools-$(uname -r)
 Use `make` command to build.
 
 ## Running:
-1. Make sure your interface is set up in `/etc/xdpa2scache/config`
-2. Make sure your server(s) ip and port are set
-3. Use `service xdpa2scache start` or `systemctl xdpa2scache start`
-4. (Optional) To enable the service on boot, use: `systemctl enable xdpa2scache.service`
+1. Ensure that everything is properly configured in `/etc/xdpa2scache/config`, interface name and server(s) IP and port.
+
+2. Start the service using: `service xdpa2scache start` or `systemctl start xdpa2scache`
+\
+(Optional) To enable the service to start automatically on boot, use: `systemctl enable xdpa2scache.service`
+
+3. Upon start, the program will attempt to load in Driver mode (Native). If there is no driver support ([NIC driver XDP support list](https://github.com/iovisor/bcc/blob/master/docs/kernel-versions.md#xdp)), it will fall back to SKB mode (Generic).
+
+4. The program will query the servers every 5 seconds for data by default (this interval can be adjusted by modifying `A2S_QUERY_TIME_SEC`).
 
 ## License:
 Licensed under the [MIT License](LICENSE).
