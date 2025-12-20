@@ -116,7 +116,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
         ? bpf_map_lookup_elem(&a2s_players, &key)
         : bpf_map_lookup_elem(&a2s_rules, &key);
 
-        // Determine if this is a challenge request based on payload length
+        // Determine if this is a challenge request by checking 4 bytes (00000000) starting at the 6th byte of the payload
         is_challenge = (*(__u32 *)(payload + 5) == 0x00000000);
 
         // A2S Debug: Log players/rules query details, payload length, value size, and whether it's a challenge
