@@ -2,6 +2,7 @@
 
 static __always_inline int send_a2s_challenge(struct xdp_md *ctx)
 {
+  // Initialize data
   void *data = (void *)(long)ctx->data;
   void *data_end = (void *)(long)ctx->data_end;
 
@@ -33,11 +34,13 @@ static __always_inline int send_a2s_challenge(struct xdp_md *ctx)
   __u8 response[] = {0xFF, 0xFF, 0xFF, 0xFF, 0x41, 0xFF, 0xFF, 0xFF, 0xFF};
   memcpy(response + 5, &challenge, 4);
 
+  // Calculate UDP payload length
   __u16 payload_len = ntohs(udph->len) - sizeof(struct udphdr);
 
   // Adjust the size of the payload when there is a difference
   if (bpf_xdp_adjust_tail(ctx, sizeof(response) - payload_len) != 0)
   {
+    // A2S Debug: Log a failure message when adjusting tail size fails
     #ifdef A2S_DEBUG
     bpf_printk("A2S Challenge: Failed to adjust tail size for response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
     sizeof(response), payload_len, sizeof(response) - payload_len);
@@ -70,6 +73,7 @@ static __always_inline int send_a2s_challenge(struct xdp_md *ctx)
   void* payload = (void *)udph + sizeof(struct udphdr);
   if (payload + 9 > data_end)
   {
+    // A2S Debug: Log insufficient space for payload when writing 9 byte response
     #ifdef A2S_DEBUG
     bpf_printk("A2S Challenge: Insufficient space for 9 byte payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
     #endif
@@ -79,10 +83,13 @@ static __always_inline int send_a2s_challenge(struct xdp_md *ctx)
   // Write the response to the packet payload
   memcpy(payload, response, sizeof(response));
 
+  // A2S Debug: Log the crafted cookie (challenge) and the full 9 byte response
+  // NOTE: Cookie (challenge) is in little endian
   #ifdef A2S_DEBUG
   bpf_printk("A2S Challenge: Crafted cookie (challenge) 0x%x, Full Response: 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", 
   challenge, response[0], response[1], response[2], response[3], response[4], response[5], response[6], response[7], response[8]);
-  
+
+  // A2S Debug: Log source and destination IPs and ports for the A2S challenge packet that we are sending
   bpf_printk("Sending A2S Challenge: Source IP: %pI4, Source Port: %d, Destination IP: %pI4, Destination Port: %d\n",
   &iph->daddr, ntohs(udph->dest), &iph->saddr, ntohs(udph->source));
   #endif
@@ -110,6 +117,7 @@ static __always_inline int send_a2s_challenge(struct xdp_md *ctx)
 
 static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, struct a2s_val *val)
 {
+  // Initialize data
   void *data = (void *)(long)ctx->data;
   void *data_end = (void *)(long)ctx->data_end;
 
@@ -143,6 +151,7 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
   // Make sure we dont go out of range of the packet
   if (unlikely(cookie + 1 > (void *)data_end))
   {
+    // A2S Debug: Log insufficient space for 1 byte cookie (challenge)
     #ifdef A2S_DEBUG
     bpf_printk("A2S Data: Insufficient space for 1 byte cookie (challenge) payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
     #endif
@@ -152,15 +161,19 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
   // Validate cookie
   if (check_cookie(iph, udph, *cookie))
   {
+    // A2S Debug: Log that the cookie (challenge) received is valid
+    // NOTE: Cookie (challenge) is in little endian
     #ifdef A2S_DEBUG
     bpf_printk("A2S Data: Cookie (challenge) is valid - 0x%x, proceeding with next steps.\n", *cookie);
     #endif
 
+    // Calculate UDP payload length
     __u16 payload_len = ntohs(udph->len) - sizeof(struct udphdr);
 
     // Resize packet to fit payload
     if (bpf_xdp_adjust_tail(ctx, val->size - payload_len) != 0)
     {
+      // A2S Debug: Log a failure message when adjusting tail size fails
       #ifdef A2S_DEBUG
       bpf_printk("A2S Data: Failed to adjust tail size for response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
       val->size, payload_len, val->size - payload_len);
@@ -193,6 +206,7 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
     payload = (void *)udph + sizeof(struct udphdr);
     if (unlikely(payload + 1 > (void *)data_end))
     {
+      // A2S Debug: Log insufficient space for 1 byte payload after tail adjustment
       #ifdef A2S_DEBUG
       bpf_printk("A2S Data: Insufficient space for 1 byte payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
       #endif
@@ -214,6 +228,7 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
       payload_ptr[i] = val->data[i];
     }
 
+    // A2S Debug: Log the crafted payload size and packet source/destination information
     #ifdef A2S_DEBUG
     bpf_printk("A2S Data: Crafted %d bytes of data to send.\n", val_data_size);
     bpf_printk("Sending A2S Data: Source IP: %pI4, Source Port: %d, Destination IP: %pI4, Destination Port: %d\n",
@@ -241,9 +256,9 @@ static __always_inline int send_a2s_data(struct xdp_md *ctx, __u8 query_type, st
     return XDP_TX;
   }
   // If the cookie is not valid, we'll resend challenge for now
-  // I think that it is better to create a map for the sended challenges per src ip/client, so we don't resend one after another endlessly
   else
   {
+    // A2S Debug: Log that the cookie was invalid and that we are resending the challenge
     #ifdef A2S_DEBUG
     bpf_printk("A2S Data: Invalid cookie (challenge), Resending challenge.\n");
     #endif

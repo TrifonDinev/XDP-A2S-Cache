@@ -1,6 +1,6 @@
 #pragma once
 
-// Don't enable it unless you want to see something or debug!
+// Use A2S_DEBUG only for debugging purposes and disable in production, A2S_DEBUG will significantly decrease performance!
 //#define A2S_DEBUG
 
 #define A2S_MAX_SIZE 1400
