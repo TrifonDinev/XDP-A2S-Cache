@@ -1,5 +1,5 @@
 # XDP A2S Cache
-My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Counter-Strike 2 at first, but also supports some of the GoldSrc and Source 1/2 engine games, or some that are using [A2S queries](https://developer.valvesoftware.com/wiki/Server_queries).
+My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Counter-Strike 2 at first, with support for multiple servers, Steam and non-Steam clients, GoldSrc and Source 1/2 engine games, as well as some other games that support [A2S queries](https://developer.valvesoftware.com/wiki/Server_queries).
 
 > [!NOTE]
 >
@@ -50,8 +50,8 @@ My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Co
 ## Requirements:
 1. A distribution with recommended Linux Kernel >= 5.15
  - Tested on:
-   - Debian 12 / 13 (12 September 2025, latest updates)
-   - Ubuntu 24.04 / 25.04 (12 September 2025, latest updates)
+   - Debian 12 / 13 (Last tested on: 1 February 2026, latest updates)
+   - Ubuntu 24.04 / 25.04 (Last tested on: 1 February 2026, latest updates)
 
 2. Ensure the following packages are installed:
 - These packages are installed via `apt` (Ubuntu, Debian, etc.), or similar package names in other package managers.
@@ -65,8 +65,14 @@ sudo apt install -y clang llvm build-essential libconfig-dev libelf-dev libpcap-
 sudo apt install -y linux-tools-$(uname -r)
 ```
 
-## Building:
+If you are cloning this repository with Git, use the `--recursive` flag to download the XDP Tools submodule.
+\
+If you cloned the repository with Git and without `--recursive` flag, run the following command from the repository root: `git submodule update --init`
+
+## Building/Installing:
 Use `make` command to build.
+\
+Use `make install` command to install.
 
 ## Running:
 1. Ensure that everything is properly configured in `/etc/xdpa2scache/config`, interface name and server(s) IP and port.
@@ -78,6 +84,21 @@ Use `make` command to build.
 3. Upon start, the program will attempt to load in Driver mode (Native). If there is no driver support ([NIC driver XDP support list](https://github.com/iovisor/bcc/blob/master/docs/kernel-versions.md#xdp)), it will fall back to SKB mode (Generic).
 
 4. The program will query the servers every 5 seconds for data by default (this interval can be adjusted by modifying `A2S_QUERY_TIME_SEC`).
+
+## FAQ:
+Q: There is libxdp error when starting the program:
+```bash
+libxdp.so.1: cannot open shared object file: No such file or directory
+```
+A: 1. Refresh library cache (recommended), by using: `sudo ldconfig`
+\
+A: 2. If it doesn't work, try adding the library path manually if it is installed in /usr/local/lib by running: `export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH`
+
+Q: There is error while installing bpftool from source: 
+```bash
+fatal error: openssl/opensslv.h: No such file or directory - 16 | #include <openssl/opensslv.h>
+```
+A: For Debian/Ubuntu, use: `sudo apt install libssl-dev`
 
 ## License:
 Licensed under the [MIT License](LICENSE).
