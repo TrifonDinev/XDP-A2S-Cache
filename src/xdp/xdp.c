@@ -96,7 +96,9 @@ int xdpa2scache_program(struct xdp_md *ctx)
         val = bpf_map_lookup_elem(&a2s_info, &key);
 
         // Determine if this is a challenge request based on payload length
+        #ifndef A2S_NON_STEAM_SUPPORT
         is_challenge = (payload_len == 25);
+        #endif
 
         // A2S Debug: Log info query details, payload length, value size, and whether it's a challenge
         #ifdef A2S_DEBUG
@@ -116,7 +118,11 @@ int xdpa2scache_program(struct xdp_md *ctx)
         : bpf_map_lookup_elem(&a2s_rules, &key);
 
         // Determine if this is a challenge request by checking 4 bytes (00000000) starting at the 6th byte of the payload
+        #ifdef A2S_NON_STEAM_SUPPORT
+        is_challenge = (*(__u32 *)(payload + 5) == 0x00000000 || *(__u32 *)(payload + 5) == 0xFFFFFFFF);
+        #else
         is_challenge = (*(__u32 *)(payload + 5) == 0x00000000);
+        #endif
 
         // A2S Debug: Log players/rules query details, payload length, value size, and whether it's a challenge
         #ifdef A2S_DEBUG
@@ -242,6 +248,33 @@ int xdpa2scache_program(struct xdp_md *ctx)
     else
     {
       // Get the location of the cookie (challenge)
+      #ifdef A2S_NON_STEAM_SUPPORT
+      if (query_type != A2S_INFO)
+      {
+        __u32 *cookie = payload + 5;
+
+        // Make sure we dont go out of range of the packet
+        if (unlikely(cookie + 1 > data_end))
+        {
+          // A2S Debug: Log insufficient space for 1 byte cookie (challenge)
+          #ifdef A2S_DEBUG
+          bpf_printk("A2S Data: Insufficient space for 1 byte cookie (challenge) payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
+          #endif
+          return XDP_DROP;
+        }
+
+        // Cookie (challenge) check: If the cookie is not valid, we will drop the packet
+        if (!check_cookie(iph, udph, *cookie))
+        {
+          // A2S Debug: Log that the cookie was invalid and that we are dropping the packet
+          // NOTE: Cookie (challenge) is in little endian
+          #ifdef A2S_DEBUG
+          bpf_printk("A2S Data: Cookie (challenge) is invalid - 0x%x, dropping packet.\n", *cookie);
+          #endif
+          return XDP_DROP;
+        }
+      }
+      #else
       __u32 *cookie = payload + (query_type == A2S_INFO ? 25 : 5);
 
       // Make sure we dont go out of range of the packet
@@ -264,6 +297,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
         #endif
         return XDP_DROP;
       }
+      #endif
 
       // A2S Debug: Log that the cookie (challenge) received is valid
       // NOTE: Cookie (challenge) is in little endian
