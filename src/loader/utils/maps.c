@@ -1,5 +1,4 @@
 #include <xdp/libxdp.h>
-#include <stdlib.h>
 
 #include "maps.h"
 

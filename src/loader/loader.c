@@ -4,9 +4,6 @@
 #include <net/if.h>
 #include <signal.h>
 #include <pthread.h>
-#include <string.h>
-#include <stdio.h>
-#include <libconfig.h>
 
 #include "utils/xdp.h"
 #include "utils/maps.h"

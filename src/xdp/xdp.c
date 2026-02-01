@@ -5,7 +5,6 @@
 #include <linux/if_ether.h>
 #include <linux/ip.h>
 #include <linux/udp.h>
-#include <linux/types.h>
 #include <bpf/bpf_helpers.h>
 
 #include "common.h"

@@ -1,7 +1,4 @@
-#include <stdio.h>
-#include <string.h>
 #include <errno.h>
-#include <xdp/libxdp.h>
 
 #include "xdp.h"
 
