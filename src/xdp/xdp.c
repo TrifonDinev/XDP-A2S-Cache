@@ -89,7 +89,11 @@ int xdpa2scache_program(struct xdp_md *ctx)
     switch (query_type)
     {
       case A2S_INFO:
+      #ifdef A2S_NON_STEAM_SUPPORT
+      if (payload_len == 25)
+      #else
       if (payload_len == 25 || payload_len == 29)
+      #endif
       {
         // Lookup the A2S_INFO response in the map using the server key
         val = bpf_map_lookup_elem(&a2s_info, &key);
