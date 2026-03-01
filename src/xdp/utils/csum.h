@@ -1,7 +1,5 @@
 #pragma once
 
-#define MAX_UDP_SIZE 1480
-
 /**
 * Calculates the new checksum after changing a single 4-byte value.
 *
@@ -44,6 +42,7 @@ static __always_inline uint16_t csum_diff4(uint32_t old_value, uint32_t new_valu
 * @param data_end Pointer to packet's data end.
 *
 * @note All credit goes to FedeParola from https://github.com/iovisor/bcc/issues/2463
+* With some edit from me - Trifon Dinev - https://github.com/TrifonDinev/XDP-A2S-Cache , https://trifondinev.com
 *
 * @return 16-bit UDP checksum.
 **/
@@ -51,6 +50,7 @@ static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udp
 {
   __u32 csum_buffer = 0;
   __u16 *buf = (void *)udph;
+  __u16 udp_len = ntohs(udph->len);
 
   // Compute pseudo-header checksum
   csum_buffer += (__u16)iph->saddr;
@@ -60,19 +60,14 @@ static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udp
   csum_buffer += (__u16)iph->protocol << 8;
   csum_buffer += udph->len;
 
-  // Compute checksum on udp header + payload
-  for (int i = 0; i < MAX_UDP_SIZE; i += 2)
+  // Compute checksum on UDP header + payload
+  for (int i = 0; i < udp_len; i += 2)
   {
     if ((void *)(buf + 1) > data_end)
-    {
-      break;
-    }
+    break;
 
-    if ((void *)buf <= data_end)
-    {
-      csum_buffer += *buf;
-      buf++;
-    }
+    csum_buffer += *buf;
+    buf++;
   }
 
   if ((void *)buf + 1 <= data_end)
@@ -81,8 +76,5 @@ static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udp
     csum_buffer += *(__u8 *)buf;
   }
 
-  __u16 csum = (__u16)csum_buffer + (__u16)(csum_buffer >> 16);
-  csum = ~csum;
-
-  return csum;
+  return ~((__u16)csum_buffer + (__u16)(csum_buffer >> 16));
 }
