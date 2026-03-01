@@ -124,6 +124,10 @@ int xdpa2scache_program(struct xdp_md *ctx)
         #ifdef A2S_NON_STEAM_SUPPORT
         is_challenge = (*(__u32 *)(payload + 5) == 0x00000000 || *(__u32 *)(payload + 5) == 0xFFFFFFFF);
         #else
+
+        // (!) Keep in mind that some game tracking websites can still use the old FFFFFFFF challenge method,
+        // in combination with 00000000 for game clients too. Server may show as offline in some game trackers!
+        // Last tested/reviewed on: 01.03.2026
         is_challenge = (*(__u32 *)(payload + 5) == 0x00000000);
         #endif
 
