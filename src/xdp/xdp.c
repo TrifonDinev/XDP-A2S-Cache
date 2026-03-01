@@ -281,6 +281,12 @@ int xdpa2scache_program(struct xdp_md *ctx)
           #endif
           return XDP_DROP;
         }
+
+        // A2S Debug: Log that the cookie (challenge) received is valid
+        // NOTE: Cookie (challenge) is in little endian
+        #ifdef A2S_DEBUG
+        bpf_printk("A2S Data: Cookie (challenge) is valid - 0x%x, proceeding with next steps.\n", *cookie);
+        #endif
       }
       #else
       __u32 *cookie = payload + (query_type == A2S_INFO ? 25 : 5);
@@ -305,12 +311,12 @@ int xdpa2scache_program(struct xdp_md *ctx)
         #endif
         return XDP_DROP;
       }
-      #endif
 
       // A2S Debug: Log that the cookie (challenge) received is valid
       // NOTE: Cookie (challenge) is in little endian
       #ifdef A2S_DEBUG
       bpf_printk("A2S Data: Cookie (challenge) is valid - 0x%x, proceeding with next steps.\n", *cookie);
+      #endif
       #endif
 
       // Resize packet to fit payload
