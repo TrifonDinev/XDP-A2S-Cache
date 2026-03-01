@@ -170,48 +170,53 @@ int xdpa2scache_program(struct xdp_md *ctx)
       __u8 response[] = {0xFF, 0xFF, 0xFF, 0xFF, 0x41, 0xFF, 0xFF, 0xFF, 0xFF};
       memcpy(response + 5, &challenge, 4);
 
-      // Adjust the size of the payload when there is a difference
-      if (bpf_xdp_adjust_tail(ctx, sizeof(response) - payload_len) != 0)
+      // Adjust the payload size only when A2S_NON_STEAM_SUPPORT macro is not defined and the query type is A2S_INFO
+      #ifndef A2S_NON_STEAM_SUPPORT
+      if (query_type == A2S_INFO)
       {
-        // A2S Debug: Log a failure message when adjusting tail size fails
-        #ifdef A2S_DEBUG
-        bpf_printk("A2S Challenge: Failed to adjust tail size for response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
-        sizeof(response), payload_len, sizeof(response) - payload_len);
-        #endif
-        return XDP_DROP;
-      }
+        if (bpf_xdp_adjust_tail(ctx, sizeof(response) - payload_len) != 0)
+        {
+          // A2S Debug: Log a failure message when adjusting tail size fails
+          #ifdef A2S_DEBUG
+          bpf_printk("A2S Challenge: Failed to adjust tail size for response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
+          sizeof(response), payload_len, sizeof(response) - payload_len);
+          #endif
+          return XDP_DROP;
+        }
 
-      // Reinitialize pointers again because of the tail adjustment
-      data = (void *)(long)ctx->data;
-      data_end = (void *)(long)ctx->data_end;
+        // Reinitialize pointers again because of the tail adjustment
+        data = (void *)(long)ctx->data;
+        data_end = (void *)(long)ctx->data_end;
 
-      eth = data;
-      if (unlikely(eth + 1 > (struct ethhdr *)data_end))
-      {
-        return XDP_DROP;
-      }
+        eth = data;
+        if (unlikely(eth + 1 > (struct ethhdr *)data_end))
+        {
+          return XDP_DROP;
+        }
 
-      iph = (struct iphdr *)(data + sizeof(struct ethhdr));
-      if (unlikely(iph + 1 > (struct iphdr *)data_end))
-      {
-        return XDP_DROP;
-      }
+        iph = (struct iphdr *)(data + sizeof(struct ethhdr));
+        if (unlikely(iph + 1 > (struct iphdr *)data_end))
+        {
+          return XDP_DROP;
+        }
 
-      udph = (struct udphdr *)(data + sizeof(struct ethhdr) + (iph->ihl * 4));
-      if (unlikely(udph + 1 > (struct udphdr *)data_end))
-      {
-        return XDP_DROP;
-      }
+        udph = (struct udphdr *)(data + sizeof(struct ethhdr) + (iph->ihl * 4));
+        if (unlikely(udph + 1 > (struct udphdr *)data_end))
+        {
+          return XDP_DROP;
+        }
 
-      payload = (void *)(udph + 1);
-      if (payload + 9 > data_end)
-      {
-        // A2S Debug: Log insufficient space for payload when writing 9 byte response
-        #ifdef A2S_DEBUG
-        bpf_printk("A2S Challenge: Insufficient space for 9 byte payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
-        #endif
-        return XDP_DROP;
+        payload = (void *)(udph + 1);
+        if (payload + 9 > data_end)
+        {
+          // A2S Debug: Log insufficient space for payload when writing 9 byte response
+          #ifdef A2S_DEBUG
+          bpf_printk("A2S Challenge: Insufficient space for 9 byte payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
+          #endif
+          return XDP_DROP;
+        }
       }
+      #endif
 
       // Write the response to the packet payload
       memcpy(payload, response, sizeof(response));
