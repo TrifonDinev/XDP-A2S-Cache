@@ -1,5 +1,7 @@
 #pragma once
 
+#define MAX_UDP_SIZE 1480
+
 /**
 * Calculates the new checksum after changing a single 4-byte value.
 *
@@ -50,7 +52,6 @@ static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udp
 {
   __u32 csum_buffer = 0;
   __u16 *buf = (void *)udph;
-  __u16 udp_len = ntohs(udph->len);
 
   // Compute pseudo-header checksum
   csum_buffer += (__u16)iph->saddr;
@@ -61,7 +62,7 @@ static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udp
   csum_buffer += udph->len;
 
   // Compute checksum on UDP header + payload
-  for (int i = 0; i < udp_len; i += 2)
+  for (int i = 0; i < MAX_UDP_SIZE; i += 2)
   {
     if ((void *)(buf + 1) > data_end)
     break;
