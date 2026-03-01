@@ -237,7 +237,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
       udph->check = calc_udp_csum(iph, udph, data_end);
 
       __u16 old_len = iph->tot_len;
-      iph->tot_len = htons(data_end - data - sizeof(struct ethhdr));
+      iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct udphdr) + 9);
 
       __u8 old_ttl = iph->ttl;
       iph->ttl = 64;
@@ -376,12 +376,12 @@ int xdpa2scache_program(struct xdp_md *ctx)
       swap_ip(iph);
       swap_udp(udph);
 
-      udph->len = htons(sizeof(struct udphdr) + val->size);
+      udph->len = htons(sizeof(struct udphdr) + val_data_size);
       udph->check = 0;
       udph->check = calc_udp_csum(iph, udph, data_end);
 
       __u16 old_len = iph->tot_len;
-      iph->tot_len = htons(data_end - data - sizeof(struct ethhdr));
+      iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct udphdr) + val_data_size);
 
       __u8 old_ttl = iph->ttl;
       iph->ttl = 64;
