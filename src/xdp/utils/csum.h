@@ -1,7 +1,5 @@
 #pragma once
 
-#define MAX_UDP_SIZE 1480
-
 /**
 * Calculates the new checksum after changing a single 4-byte value.
 *
@@ -61,19 +59,37 @@ static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udp
   csum_buffer += (__u16)iph->protocol << 8;
   csum_buffer += udph->len;
 
+  /* Mask 0x07FF (2047) bounds the scalar range to avoid verifier 1M instruction explosion.
+   * Observed with VirtIO drivers and may also occur on other virtualized drivers/VMs.
+   * Ensures correct behavior for small packets on VMware "vmxnet3" and physical NICs.
+   * Tested on: I350, X550, X710, E810, KVM/QEMU VirtIO, VMware vmxnet3.
+   * NOTE: Adjust the 0x07FF mask and the 1480 cap if jumbo frames are used.
+  */
+  __u16 udp_len = ntohs(udph->len) & 0x07FF;
+
+  // Cap length at 1480 bytes to ensure compliance with standard Ethernet MTU
+  if (udp_len > 1480)
+  {
+    udp_len = 1480;
+  }
+
   // Compute checksum on UDP header + payload
-  for (int i = 0; i < MAX_UDP_SIZE; i += 2)
+  for (int i = 0; i < udp_len; i += 2)
   {
     if ((void *)(buf + 1) > data_end)
     break;
 
-    csum_buffer += *buf;
-    buf++;
+    // Verifier safety check for kernels < 6.8
+    if ((void *)buf <= data_end)
+    {
+      csum_buffer += *buf;
+      buf++;
+    }
   }
 
+  // Handle the last byte if payload length is not 2-byte aligned
   if ((void *)buf + 1 <= data_end)
   {
-    // In case payload is not 2 bytes aligned
     csum_buffer += *(__u8 *)buf;
   }
 
