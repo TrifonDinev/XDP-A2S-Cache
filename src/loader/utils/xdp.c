@@ -2,6 +2,7 @@
 #include <net/if.h>
 #include <xdp/libxdp.h>
 
+#include "config.h"
 #include "xdp.h"
 
 /**
@@ -49,6 +50,13 @@ int attach_xdp(struct xdp_program *prog, unsigned int ifindex, int detach)
     { XDP_MODE_NATIVE, "DRV/native" },
     { XDP_MODE_SKB, "SKB/generic" }
   };
+
+  // Set program priority and chain continuation before attaching
+  if (!detach)
+  {
+    xdp_program__set_run_prio(prog, XDP_MULTIPROG_PRIORITY);
+    xdp_program__set_chain_call_enabled(prog, XDP_MULTIPROG_ACTION, XDP_MULTIPROG_ENABLED);
+  }
 
   // Try to attach/detach using available modes (Native then Generic)
   for (int i = 0; i < sizeof(modes) / sizeof(modes[0]); i++)

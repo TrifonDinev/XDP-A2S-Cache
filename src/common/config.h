@@ -1,5 +1,14 @@
 #pragma once
 
+// Enable chain continuation for multiple XDP programs (1 = enable. 0 = disable).
+#define XDP_MULTIPROG_ENABLED 1
+
+// Program execution priority (lower values run earlier in the chain).
+#define XDP_MULTIPROG_PRIORITY 10
+
+// The action that indicates it should go onto the next program (default XDP_PASS).
+#define XDP_MULTIPROG_ACTION XDP_PASS
+
 // Use A2S_DEBUG only for debugging purposes and disable in production, A2S_DEBUG will significantly decrease performance!
 //#define A2S_DEBUG
 

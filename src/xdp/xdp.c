@@ -6,6 +6,8 @@
 #include <linux/ip.h>
 #include <linux/udp.h>
 #include <bpf/bpf_helpers.h>
+#include <xdp/xdp_helpers.h>
+#include <xdp/prog_dispatcher.h>
 
 #include "common.h"
 #include "config.h"
@@ -15,6 +17,12 @@
 #include "utils/swap.h"
 #include "utils/csum.h"
 #include "utils/cookie.h"
+
+struct
+{
+  __uint(priority, XDP_MULTIPROG_PRIORITY);
+  __uint(XDP_MULTIPROG_ACTION, XDP_MULTIPROG_ENABLED);
+} XDP_RUN_CONFIG(xdpa2scache_program);
 
 SEC("xdpa2scache")
 int xdpa2scache_program(struct xdp_md *ctx)
@@ -410,3 +418,4 @@ int xdpa2scache_program(struct xdp_md *ctx)
 }
 
 char LICENSE[] SEC("license") = "GPL";
+__uint(xsk_prog_version, XDP_DISPATCHER_VERSION) SEC(XDP_METADATA_SECTION);
