@@ -22,7 +22,7 @@ struct
   __type(key, struct a2s_server_key);
   __type(value, struct a2s_val);
   __uint(max_entries, 1024);
-} a2s_players SEC(".maps");
+} a2s_player SEC(".maps");
 
 struct
 {

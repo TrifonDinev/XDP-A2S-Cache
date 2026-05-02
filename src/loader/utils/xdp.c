@@ -116,13 +116,13 @@ int get_maps(struct xdp_program *prog, xdp_maps_t *xdp_maps)
 
   // Get map file descriptors by name
   xdp_maps->a2s_info = bpf_object__find_map_fd_by_name(bpf_obj, "a2s_info");
-  xdp_maps->a2s_players = bpf_object__find_map_fd_by_name(bpf_obj, "a2s_players");
+  xdp_maps->a2s_player = bpf_object__find_map_fd_by_name(bpf_obj, "a2s_player");
   xdp_maps->a2s_rules = bpf_object__find_map_fd_by_name(bpf_obj, "a2s_rules");
 
   // Check if any map FD is invalid
-  if (xdp_maps->a2s_info < 0 || xdp_maps->a2s_players < 0 || xdp_maps->a2s_rules < 0)
+  if (xdp_maps->a2s_info < 0 || xdp_maps->a2s_player < 0 || xdp_maps->a2s_rules < 0)
   {
-    int err = xdp_maps->a2s_info < 0 ? xdp_maps->a2s_info: xdp_maps->a2s_players < 0 ? xdp_maps->a2s_players : xdp_maps->a2s_rules;
+    int err = xdp_maps->a2s_info < 0 ? xdp_maps->a2s_info: xdp_maps->a2s_player < 0 ? xdp_maps->a2s_player : xdp_maps->a2s_rules;
     fprintf(stderr, "ERROR: Could not find one or more BPF maps: %s (code %d)\n", strerror(-err), err);
     return err;
   }

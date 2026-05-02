@@ -33,9 +33,9 @@ void *a2s_query_servers(void *arg)
     uint8_t req_size;
   } queries[] =
   {
-    { "\xFF\xFF\xFF\xFF\x54Source Engine Query\x00", "A2S_INFO", ctx->xdp_maps.a2s_info, 25 },
-    { "\xFF\xFF\xFF\xFF\x55\xFF\xFF\xFF\xFF", "A2S_PLAYERS", ctx->xdp_maps.a2s_players, 9 },
-    { "\xFF\xFF\xFF\xFF\x56\xFF\xFF\xFF\xFF", "A2S_RULES", ctx->xdp_maps.a2s_rules, 9 }
+    { A2S_INFO_REQ, "A2S_INFO", ctx->xdp_maps.a2s_info, A2S_INFO_REQ_SIZE },
+    { A2S_PLAYER_REQ, "A2S_PLAYER", ctx->xdp_maps.a2s_player, A2S_PLAYER_REQ_SIZE },
+    { A2S_RULES_REQ, "A2S_RULES", ctx->xdp_maps.a2s_rules, A2S_RULES_REQ_SIZE }
   };
 
   enum
@@ -244,16 +244,16 @@ void *a2s_query_servers(void *arg)
         }
 
         // Ignore invalid packets
-        if (!srv || n < 5 || n > A2S_MAX_SIZE || *(uint32_t *)recv_buffer != 0xFFFFFFFF)
+        if (!srv || n < A2S_MIN_SIZE || n > A2S_MAX_SIZE || *(uint32_t *)recv_buffer != CONNECTIONLESS_HEADER)
         {
           #ifdef A2S_DEBUG
           if (!srv)
           {
             printf("[A2S] Unknown source packet received\n");
           }
-          else if (n < 5 || n > A2S_MAX_SIZE)
+          else if (n < A2S_MIN_SIZE || n > A2S_MAX_SIZE)
           {
-            printf("[A2S] %s from %s (%s): Value size: %zd\n", n < 5 ? "Invalid/Short A2S packet" : "A2S packet is above A2S_MAX_SIZE",
+            printf("[A2S] %s from %s (%s): Value size: %zd\n", n < A2S_MIN_SIZE ? "Invalid/Short A2S packet" : "A2S packet is above A2S_MAX_SIZE",
             srv->ip_port, queries[srv->current_j].map_name, n);
           }
           else if (recv_buffer[0] == 0xFE)
@@ -275,10 +275,10 @@ void *a2s_query_servers(void *arg)
         // Determine which query type this response belongs to
         switch (header)
         {
-          case A2S_CHALLENGE: step = srv->current_j; break;
-          case 0x49: step = 0; break;
-          case 0x44: step = 1; break;
-          case 0x45: step = 2; break;
+          case S2C_CHALLENGE: step = srv->current_j; break;
+          case S2A_INFO_SRC: step = 0; break;
+          case S2A_PLAYER: step = 1; break;
+          case S2A_RULES: step = 2; break;
 
           default:
           #ifdef A2S_DEBUG
@@ -308,7 +308,7 @@ void *a2s_query_servers(void *arg)
         srv->maps_cleaned_already = false;
 
         // Handle challenge if present
-        if (header == A2S_CHALLENGE)
+        if (header == S2C_CHALLENGE)
         {
           if (n != 9)
           {

@@ -64,8 +64,8 @@ int xdpa2scache_program(struct xdp_md *ctx)
   // Pointer to the start of the UDP payload
   void *payload = (void *)(udph + 1);
 
-  // Check if there are at least 9 bytes available in the payload and that the first 4 bytes match 0xFFFFFFFF
-  if (payload + 9 <= data_end && *((__u32 *)payload) == 0xFFFFFFFF)
+  // Check if there are at least 9 bytes available in the payload and that the first 4 bytes match the CONNECTIONLESS_HEADER
+  if (payload + 9 <= data_end && *((__u32 *)payload) == CONNECTIONLESS_HEADER)
   {
     // Initialize a key struct to identify the server (IP and port) for A2S lookups
     struct a2s_server_key key = {0};
@@ -111,13 +111,13 @@ int xdpa2scache_program(struct xdp_md *ctx)
       }
       break;
 
-      case A2S_PLAYERS:
+      case A2S_PLAYER:
       case A2S_RULES:
       if (payload_len == 9)
       {
-        // Lookup the A2S_PLAYERS or A2S_RULES response in the map using the server key
-        val = (query_type == A2S_PLAYERS)
-        ? bpf_map_lookup_elem(&a2s_players, &key)
+        // Lookup the A2S_PLAYER or A2S_RULES response in the map using the server key
+        val = (query_type == A2S_PLAYER)
+        ? bpf_map_lookup_elem(&a2s_player, &key)
         : bpf_map_lookup_elem(&a2s_rules, &key);
 
         // Determine if this is a challenge request by checking 4 bytes (00000000) starting at the 6th byte of the payload
@@ -131,10 +131,10 @@ int xdpa2scache_program(struct xdp_md *ctx)
         is_challenge = (*(__u32 *)(payload + 5) == 0x00000000);
         #endif
 
-        // A2S Debug: Log players/rules query details, payload length, value size, and whether it's a challenge
+        // A2S Debug: Log player/rules query details, payload length, value size, and whether it's a challenge
         #ifdef A2S_DEBUG
         bpf_printk("A2S Debug: A2S_%s: Payload Length: %u, Value Size: %u, Is Challenge: %s\n",
-        (query_type == A2S_PLAYERS) ? "PLAYERS" : "RULES", payload_len, val ? val->size : 0, is_challenge ? "true" : "false");
+        (query_type == A2S_PLAYER) ? "PLAYER" : "RULES", payload_len, val ? val->size : 0, is_challenge ? "true" : "false");
         #endif
       }
       break;
@@ -228,7 +228,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
       // A2S Debug: Log the crafted cookie (challenge) and the full 9 byte response
       // NOTE: Cookie (challenge) is in little endian
       #ifdef A2S_DEBUG
-      bpf_printk("A2S Challenge: Crafted cookie (challenge) 0x%x, Full Response: 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", 
+      bpf_printk("A2S Challenge: Crafted cookie (challenge) 0x%x, Full Response: 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x\n",
       challenge, response[0], response[1], response[2], response[3], response[4], response[5], response[6], response[7], response[8]);
 
       // A2S Debug: Log source and destination IPs and ports for the A2S challenge packet that we are sending
