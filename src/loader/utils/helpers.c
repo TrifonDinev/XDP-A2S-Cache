@@ -1,45 +1,62 @@
 #include <stdlib.h>
+#include <errno.h>
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <pthread.h>
 #include <libconfig.h>
+#include <xdp/libxdp.h>
 
 #include "helpers.h"
-#include "maps.h"
-#include "xdp.h"
 
-extern char *interface;
-extern int ifidx;
-extern struct xdp_program *prog;
-extern struct server_config cfg;
-
-// Free dynamically allocated memory and reset server configuration (server count and server list)
-void cleanup()
+/**
+* Free dynamically allocated memory and reset server configuration (server count and server list)
+*
+* @param ctx Pointer to the loader context.
+*/
+void cleanup(loader_ctx_t *ctx)
 {
-  if (interface)
+  fprintf(stderr, "Starting resource cleanup...\n");
+
+  // Check if interface name exists before freeing
+  if (ctx->ifname)
   {
-    free(interface);
-    interface = NULL;
+    fprintf(stderr, "Cleaning up loader context for interface: %s...\n", ctx->ifname);
+    free(ctx->ifname);
+    ctx->ifname = NULL;
+    ctx->ifindex = 0;
   }
-  
-  if (cfg.servers)
+  else
   {
-    for (int i = 0; i < cfg.server_count; i++)
-    {
-      free(cfg.servers[i].ip);
-    }
-    
-    free(cfg.servers);
-    cfg.servers = NULL;
-    cfg.server_count = 0;
+    fprintf(stderr, "Cleaning up uninitialized/empty loader interface context...\n");
   }
+
+  // Check if server list exists and free each IP string
+  if (ctx->servers)
+  {
+    fprintf(stderr, "Cleaning up %d configured servers...\n", ctx->server_count);
+    free(ctx->servers);
+    ctx->servers = NULL;
+    fprintf(stderr, "Server array memory released.\n");
+  }
+
+  ctx->server_count = 0;
+  fprintf(stderr, "Cleanup finished successfully.\n");
 }
 
-// Parse the configuration file to retrieve the network interface and server details (IP and port)
-// Populate the cfg structure with the parsed data
-void parse_config_file(struct server_config *cfg)
+/**
+* Parse the configuration file to retrieve the network interface and server details (IP and port)
+* Populate the cfg structure with the parsed data
+*
+* @param ctx Pointer to the context to populate.
+* @param filename Path to the configuration file.
+* @return true on success, or false on parsing or validation failure.
+*/
+bool parse_config_file(loader_ctx_t *ctx, const char *filename)
 {
-  const char *filename = "/etc/xdpa2scache/config";
   config_t config;
   config_init(&config);
 
+  // Check if the configuration file can be read and parsed
   if (!config_read_file(&config, filename))
   {
     fprintf(stderr, "%s:%d - %s\n - Config file is missing!\n",
@@ -47,114 +64,208 @@ void parse_config_file(struct server_config *cfg)
     config_error_line(&config),
     config_error_text(&config));
     config_destroy(&config);
-    exit(EXIT_FAILURE);
+    return false;
   }
 
+  // Check if the interface setting is present
   const char *interface_temp;
   if (config_lookup_string(&config, "interface", &interface_temp) != CONFIG_TRUE)
   {
     fprintf(stderr, "No 'interface' setting in configuration file.\n");
     config_destroy(&config);
-    exit(EXIT_FAILURE);
+    return false;
   }
 
-  interface = strdup(interface_temp);
-  if (!interface)
+  // Check if the interface name isn't just an empty string
+  if (interface_temp[0] == '\0')
+  {
+    fprintf(stderr, "The 'interface' setting is empty in configuration file.\n");
+    config_destroy(&config);
+    return false;
+  }
+
+  // Check if the network interface is valid
+  if ((ctx->ifindex = if_nametoindex(interface_temp)) == 0)
+  {
+    fprintf(stderr, "ERROR: Interface '%s' not found: %s\n", interface_temp, strerror(errno));
+    config_destroy(&config);
+    return false;
+  }
+
+  // Check if memory allocation for the interface name failed
+  if (!(ctx->ifname = strdup(interface_temp)))
   {
     fprintf(stderr, "Memory allocation failed for interface.\n");
     config_destroy(&config);
-    exit(EXIT_FAILURE);
+    return false;
   }
 
+  // Check if there are any servers defined in the config
   config_setting_t *servers = config_lookup(&config, "servers");
-  if (!servers)
-  {
-    fprintf(stderr, "No 'servers' setting in configuration file.\n");
-    config_destroy(&config);
-    cleanup();
-    exit(EXIT_FAILURE);
-  }
+  int count = (servers) ? config_setting_length(servers) : 0;
 
-  int count = config_setting_length(servers);
-  if (count == 0)
+  if (count <= 0)
   {
     fprintf(stderr, "No servers configured in the 'servers' setting.\n");
     config_destroy(&config);
-    cleanup();
-    exit(EXIT_FAILURE);
+    return false;
   }
 
-  cfg->servers = malloc(count * sizeof(struct server));
-  if (!cfg->servers)
+  // Check if memory allocation for servers failed
+  if (!(ctx->servers = calloc(count, sizeof(struct sockaddr_in))))
   {
     fprintf(stderr, "Memory allocation failed for servers array.\n");
     config_destroy(&config);
-    cleanup();
-    exit(EXIT_FAILURE);
+    return false;
   }
 
+  // Set count to 0 and increment it as we successfully load each server
+  ctx->server_count = 0;
+
+  // Process and validate each server from the configuration
   for (int i = 0; i < count; i++)
   {
-    config_setting_t *server = config_setting_get_elem(servers, i);
-    const char *ip_temp;
-    int port;
+    config_setting_t *server_cfg = config_setting_get_elem(servers, i);
+    const char *ip_str;
+    int port_val;
 
-    if (!(config_setting_lookup_string(server, "ip", &ip_temp) && config_setting_lookup_int(server, "port", &port)))
+    // Each server must have both an IP and a port
+    if (!(config_setting_lookup_string(server_cfg, "ip", &ip_str) && config_setting_lookup_int(server_cfg, "port", &port_val)))
     {
-      fprintf(stderr, "Invalid 'server' setting at index %d.\n", i);
-      
-      for (int j = 0; j < i; j++)
-      {
-        free(cfg->servers[j].ip);
-      }
-
-      free(cfg->servers);
-      cfg->servers = NULL;
-      cfg->server_count = 0;
-
-      config_destroy(&config);
-      cleanup();
-      exit(EXIT_FAILURE);
+      fprintf(stderr, "Invalid 'server' setting at index %d. Skipping...\n", i);
+      continue;
     }
 
-    cfg->servers[i].ip = strdup(ip_temp);
-    if (!cfg->servers[i].ip)
+    // Prepare address structure in network byte order
+    struct sockaddr_in addr = { .sin_family = AF_INET, .sin_port = htons(port_val) };
+
+    // Validate IP address
+    if (inet_pton(AF_INET, ip_str, &addr.sin_addr) <= 0)
     {
-      fprintf(stderr, "Memory allocation failed for server IP at index %d.\n", i);
-
-      for (int j = 0; j < i; j++)
-      {
-        free(cfg->servers[j].ip);
-      }
-
-      free(cfg->servers);
-      cfg->servers = NULL;
-      cfg->server_count = 0;
-
-      config_destroy(&config);
-      cleanup();
-      exit(EXIT_FAILURE);
+      fprintf(stderr, "Invalid IP address format: %s. Skipping index %d...\n", ip_str, i);
+      continue;
     }
 
-    cfg->servers[i].port = port;
+    // Validate Port
+    if (port_val < 1 || port_val > 65535)
+    {
+      fprintf(stderr, "ERROR: Invalid port %d at index %d (must be 1-65535). Skipping...\n", port_val, i);
+      continue;
+    }
+
+    // Duplicate check
+    bool is_duplicate = false;
+
+    for (int j = 0; j < ctx->server_count; j++)
+    {
+      if (ctx->servers[j].sin_addr.s_addr == addr.sin_addr.s_addr && ctx->servers[j].sin_port == addr.sin_port)
+      {
+        is_duplicate = true;
+        break;
+      }
+    }
+
+    if (is_duplicate)
+    {
+      fprintf(stderr, "Duplicate server found: %s:%d. Skipping index %d...\n", ip_str, port_val, i);
+      continue;
+    }
+
+    ctx->servers[ctx->server_count++] = addr;
   }
 
-  // Print how much servers we loaded from the configuration.
-  cfg->server_count = count;
-  printf(count == 1 ? "Loaded 1 server from configuration.\n" : "Loaded %d servers from configuration.\n", count);
+  // Memory optimization (shrink) if duplicates were removed
+  if (ctx->server_count < count && ctx->server_count > 0)
+  {
+    struct sockaddr_in *temp = realloc(ctx->servers, ctx->server_count * sizeof(struct sockaddr_in));
+
+    if (temp)
+    {
+      ctx->servers = temp;
+    }
+    else
+    {
+      fprintf(stderr, "Warning: Could not shrink server list memory, using original allocation.\n");
+    }
+  }
+  else if (ctx->server_count == 0)
+  {
+    fprintf(stderr, "No valid servers were loaded from configuration.\n");
+    config_destroy(&config);
+    return false;
+  }
+
+  // Print how much servers we loaded from the configuration
+  printf(ctx->server_count == 1 ? "Loaded 1 server from configuration.\n" : "Loaded %d servers from configuration.\n", ctx->server_count);
 
   config_destroy(&config);
+  return true;
 }
 
-// Handle termination signals to gracefully detach the XDP program, close resources, and clean up before exiting
-void termination_handler()
+/**
+* Handle termination signals to gracefully stop the query thread, detach the XDP program, close resources, and clean up before exiting
+*
+* @param ctx Pointer to the loader context.
+* @param sig Signal number received (0 for fatal errors).
+*/
+void termination_handler(loader_ctx_t *ctx, int sig)
 {
-  if (detach_xdp(ifidx, prog) < 0)
+  // Don't try another shutdown if one is already in progress
+  if (!ctx->running)
   {
-    fprintf(stderr, "ERROR: failed to detach xdp program from interface\n");
+    printf("\r[!] Already shutting down, please wait...\n");
+    return;
   }
 
-  xdp_program__close(prog);
-  cleanup();
-  exit(EXIT_SUCCESS);
+  // Print that termination signal has been received
+  if (sig)
+  {
+    printf("\rReceived %s (signal %d). Starting graceful shutdown...\n", strsignal(sig), sig);
+  }
+
+  // Stop the background query thread
+  ctx->running = false;
+
+  // Wait for the background query thread to finish
+  if (ctx->query_tid)
+  {
+    // We can't wait for ourselves (prevent freeze)
+    if (!pthread_equal(pthread_self(), ctx->query_tid))
+    {
+      // When shutdown from main thread (signal)
+      printf("Waiting for background query thread to exit...\n");
+      pthread_join(ctx->query_tid, NULL);
+      printf("Background query thread exited. Cleaning up resources...\n");
+    }
+    else
+    {
+      // When shutdown from background query thread (internal/error)
+      printf("Internal shutdown from background query thread. Cleaning up resources...\n");
+    }
+
+    // Set query thread ID to 0
+    ctx->query_tid = 0;
+  }
+
+  // Detach XDP program
+  if (ctx->prog)
+  {
+    if (ctx->ifindex > 0)
+    {
+      detach_xdp(ctx->prog, ctx->ifindex);
+    }
+
+    // Close XDP program and clean up memory
+    xdp_program__close(ctx->prog);
+    ctx->prog = NULL;
+  }
+
+  // Cleanup resources
+  cleanup(ctx);
+
+  // Final confirmation before exiting
+  printf("Shutdown complete.\n");
+
+  // Exit program
+  exit(sig == 0 ? EXIT_FAILURE : EXIT_SUCCESS);
 }

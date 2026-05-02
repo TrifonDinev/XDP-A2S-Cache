@@ -1,7 +1,14 @@
 #pragma once
 
-#include <xdp/libxdp.h>
-
 struct xdp_program *load_bpf_object(const char *filename);
-int attach_xdp(struct xdp_program *prog, int ifidx, __u8 detach);
-int detach_xdp(int ifidx, struct xdp_program *prog);
+int attach_xdp(struct xdp_program *prog, unsigned int ifindex, int detach);
+int detach_xdp(struct xdp_program *prog, unsigned int ifindex);
+
+typedef struct xdp_maps
+{
+  int a2s_info;
+  int a2s_players;
+  int a2s_rules;
+} xdp_maps_t;
+
+int get_maps(struct xdp_program *prog, xdp_maps_t *xdp_maps);
