@@ -8,18 +8,9 @@
 #include <bpf/bpf.h>
 
 #include "common.h"
+#include "config.h"
 #include "a2s_defs.h"
 #include "helpers.h"
-
-/**
-* A2S_QUERY_TIME_SEC - Interval (in seconds) between A2S queries
-*
-* Determines how frequently the program polls for data updates from the server(s).
-* A value in the 5-10 seconds range is reasonable for fresher data I think so.
-*
-* BEWARE: Long caching data may be flagged as spoofed by some master servers (e.g., Steam master server), as far as I know!
-*/
-#define A2S_QUERY_TIME_SEC 5
 
 void *a2s_query_servers(void *arg)
 {

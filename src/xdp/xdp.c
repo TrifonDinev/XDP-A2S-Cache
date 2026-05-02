@@ -8,6 +8,7 @@
 #include <bpf/bpf_helpers.h>
 
 #include "common.h"
+#include "config.h"
 #include "a2s_defs.h"
 
 #include "utils/maps.h"
@@ -121,13 +122,9 @@ int xdpa2scache_program(struct xdp_md *ctx)
         : bpf_map_lookup_elem(&a2s_rules, &key);
 
         // Determine if this is a challenge request by checking 4 bytes (00000000) starting at the 6th byte of the payload
-        #ifdef A2S_NON_STEAM_SUPPORT
+        #if defined A2S_NON_STEAM_SUPPORT || defined A2S_DUAL_CHALLENGE_SUPPORT
         is_challenge = (*(__u32 *)(payload + 5) == 0x00000000 || *(__u32 *)(payload + 5) == 0xFFFFFFFF);
         #else
-
-        // (!) Keep in mind that some game tracking websites can still use the old FFFFFFFF challenge method,
-        // in combination with 00000000 for game clients too. Server may show as offline in some game trackers!
-        // Last tested/reviewed on: 01.03.2026
         is_challenge = (*(__u32 *)(payload + 5) == 0x00000000);
         #endif
 
