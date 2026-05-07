@@ -67,16 +67,6 @@ void *a2s_query_servers(void *arg)
     goto cleanup;
   }
 
-  // Bind socket to the interface we use to prevent routing via down links (e.g. secondary interface)
-  if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, ctx->ifname, strlen(ctx->ifname) + 1) < 0)
-  {
-    #ifdef A2S_DEBUG
-    fprintf(stderr, "ERROR: Failed to bind socket to %s: %s\n", ctx->ifname, strerror(errno));
-    #else
-    perror("SO_BINDTODEVICE failed");
-    #endif
-  }
-
   // Increase buffer, just to be safe
   int rcvbuf = 8 * 1024 * 1024;
   if (setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf)) < 0)
@@ -117,9 +107,6 @@ void *a2s_query_servers(void *arg)
     // Initialized to -1 on start to indicate no query has been sent yet
     // When we first send a query, it will be set to 0
     srv->current_j = -1;
-
-    // Prepare the data in challenge_buf array
-    memcpy(srv->challenge_buf, queries[0].request_data, queries[0].req_size);
 
     #ifdef A2S_DEBUG
     char ip_str[INET_ADDRSTRLEN];
@@ -315,18 +302,22 @@ void *a2s_query_servers(void *arg)
           #endif
 
           // Prepare and send challenge response to server
-          int offset = (queries[step].request_data[4] == A2S_INFO) ? 25 : 5;
+          int is_a2s_info = queries[step].request_data[4] == A2S_INFO;
 
-          if (offset == 5)
+          if (is_a2s_info)
           {
+            memcpy(srv->challenge_buf, A2S_INFO_REQ, A2S_INFO_REQ_SIZE);
+          }
+          else
+          {
+            *(uint32_t *)srv->challenge_buf = 0xFFFFFFFF;
             srv->challenge_buf[4] = queries[step].request_data[4];
           }
 
-          // Copy challenge token from received packet into buffer
-          memcpy(srv->challenge_buf + offset, recv_buffer + 5, 4);
+          memcpy(srv->challenge_buf + (is_a2s_info ? 25 : 5), recv_buffer + 5, 4);
 
           // Send the challenge response back to the server
-          ssize_t sent = sendto(sockfd, srv->challenge_buf, offset + 4,
+          ssize_t sent = sendto(sockfd, srv->challenge_buf, is_a2s_info ? 29 : 9,
             MSG_DONTWAIT | MSG_NOSIGNAL, (struct sockaddr *)&srv->addr, sizeof(struct sockaddr_in));
 
           if (sent < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
