@@ -46,6 +46,7 @@ static __always_inline uint16_t csum_diff4(uint32_t old_value, uint32_t new_valu
 *
 * @return 16-bit UDP checksum.
 **/
+#ifndef USE_HW_UDP_CSUM_OFFLOAD
 static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udph, void *data_end)
 {
   __u32 csum_buffer = 0;
@@ -95,3 +96,4 @@ static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udp
 
   return ~((__u16)csum_buffer + (__u16)(csum_buffer >> 16));
 }
+#endif

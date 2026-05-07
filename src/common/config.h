@@ -12,6 +12,33 @@
 // Use A2S_DEBUG only for debugging purposes and disable in production, A2S_DEBUG will significantly decrease performance!
 //#define A2S_DEBUG
 
+/*
+* USE_HW_UDP_CSUM_OFFLOAD
+*
+* When enabled, the network card (NIC) calculates the UDP checksum in hardware
+* instead of software calc_udp_csum().
+*
+* In this mode, the UDP checksum field is set to 0. This tells the NIC that
+* it should compute and fill in the correct checksum before transmitting the packet.
+*
+* When disabled, the checksum is calculated in software using calc_udp_csum()
+* before sending.
+*
+* ---------------------------------------------------------------------------
+* How to check offload support (Linux):
+*
+* For example, if your interface is ens3:
+* ethtool -k ens3 | grep -E "tx-checksumming|udp|checksum"
+* ---------------------------------------------------------------------------
+* Note: Exact feature names vary by NIC and driver.
+*
+* Offload support still depends on firmware, driver, and kernel configuration.
+* Always verify with ethtool, because it may be disabled even if supported.
+*
+* Disable this only if your NIC and driver doesn't support UDP checksum offloading.
+*/
+#define USE_HW_UDP_CSUM_OFFLOAD
+
 /**
 * Enables support for Non-Steam clients/emulators.
 *
