@@ -2,7 +2,6 @@
 #include <net/if.h>
 #include <xdp/libxdp.h>
 
-#include "config.h"
 #include "xdp.h"
 
 /**
@@ -121,19 +120,38 @@ int get_maps(struct xdp_program *prog, xdp_maps_t *xdp_maps)
 {
   // Get the BPF object from the XDP program
   struct bpf_object *bpf_obj = xdp_program__bpf_obj(prog);
+  int err;
 
-  // Get map file descriptors by name
   xdp_maps->a2s_info = bpf_object__find_map_fd_by_name(bpf_obj, "a2s_info");
-  xdp_maps->a2s_player = bpf_object__find_map_fd_by_name(bpf_obj, "a2s_player");
-  xdp_maps->a2s_rules = bpf_object__find_map_fd_by_name(bpf_obj, "a2s_rules");
 
-  // Check if any map FD is invalid
-  if (xdp_maps->a2s_info < 0 || xdp_maps->a2s_player < 0 || xdp_maps->a2s_rules < 0)
+  if (xdp_maps->a2s_info < 0)
   {
-    int err = xdp_maps->a2s_info < 0 ? xdp_maps->a2s_info: xdp_maps->a2s_player < 0 ? xdp_maps->a2s_player : xdp_maps->a2s_rules;
-    fprintf(stderr, "ERROR: Could not find one or more BPF maps: %s (code %d)\n", strerror(-err), err);
+    err = xdp_maps->a2s_info;
+    fprintf(stderr, "ERROR: Could not find BPF map 'a2s_info': %s (code %d)\n", strerror(-err), err);
     return err;
   }
+
+  #ifdef A2S_PLAYER_ENABLE
+  xdp_maps->a2s_player = bpf_object__find_map_fd_by_name(bpf_obj, "a2s_player");
+
+  if (xdp_maps->a2s_player < 0)
+  {
+    err = xdp_maps->a2s_player;
+    fprintf(stderr, "ERROR: Could not find BPF map 'a2s_player': %s (code %d)\n", strerror(-err), err);
+    return err;
+  }
+  #endif
+
+  #ifdef A2S_RULES_ENABLE
+  xdp_maps->a2s_rules = bpf_object__find_map_fd_by_name(bpf_obj, "a2s_rules");
+
+  if (xdp_maps->a2s_rules < 0)
+  {
+    err = xdp_maps->a2s_rules;
+    fprintf(stderr, "ERROR: Could not find BPF map 'a2s_rules': %s (code %d)\n", strerror(-err), err);
+    return err;
+  }
+  #endif
 
   return 0;
 }

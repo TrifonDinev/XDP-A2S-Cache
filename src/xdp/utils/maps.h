@@ -16,6 +16,7 @@ struct
   __uint(max_entries, 1024);
 } a2s_info SEC(".maps");
 
+#ifdef A2S_PLAYER_ENABLE
 struct
 {
   __uint(type, BPF_MAP_TYPE_HASH);
@@ -23,7 +24,9 @@ struct
   __type(value, struct a2s_val);
   __uint(max_entries, 1024);
 } a2s_player SEC(".maps");
+#endif
 
+#ifdef A2S_RULES_ENABLE
 struct
 {
   __uint(type, BPF_MAP_TYPE_HASH);
@@ -31,3 +34,4 @@ struct
   __type(value, struct a2s_val);
   __uint(max_entries, 1024);
 } a2s_rules SEC(".maps");
+#endif

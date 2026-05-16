@@ -118,10 +118,44 @@ int xdpa2scache_program(struct xdp_md *ctx)
 
       case A2S_PLAYER:
       case A2S_RULES:
+      // If neither A2S_PLAYER_ENABLE nor A2S_RULES_ENABLE is defined, drop the packet
+      #if !defined(A2S_PLAYER_ENABLE) && !defined(A2S_RULES_ENABLE)
+      #ifdef A2S_DEBUG
+      bpf_printk("[A2S DEBUG] Dropping A2S_%s packet, because A2S_%s_ENABLE is disabled.\n",
+      (query_type == A2S_PLAYER) ? "PLAYER" : "RULES", (query_type == A2S_PLAYER) ? "PLAYER" : "RULES");
+      #endif
+      return XDP_DROP;
+      #endif
+
       if (payload_len == 9)
       {
+        // If both are enabled (A2S_PLAYER and A2S_RULES)
         // Lookup the A2S_PLAYER or A2S_RULES response in the map using the server key
+        #if defined(A2S_PLAYER_ENABLE) && defined(A2S_RULES_ENABLE)
         val = (query_type == A2S_PLAYER) ? bpf_map_lookup_elem(&a2s_player, &key) : bpf_map_lookup_elem(&a2s_rules, &key);
+
+        // If only A2S_PLAYER is enabled, drop A2S_RULES packets
+        #elif defined(A2S_PLAYER_ENABLE)
+        if (query_type == A2S_RULES)
+        {
+          #ifdef A2S_DEBUG
+          bpf_printk("[A2S DEBUG] Dropping A2S_RULES packet, because A2S_RULES_ENABLE is disabled.\n");
+          #endif
+          return XDP_DROP;
+        }
+        val = bpf_map_lookup_elem(&a2s_player, &key);
+
+        // If only A2S_RULES is enabled, drop A2S_PLAYER packets
+        #elif defined(A2S_RULES_ENABLE)
+        if (query_type == A2S_PLAYER)
+        {
+          #ifdef A2S_DEBUG
+          bpf_printk("[A2S DEBUG] Dropping A2S_PLAYER packet, because A2S_PLAYER_ENABLE is disabled.\n");
+          #endif
+          return XDP_DROP;
+        }
+        val = bpf_map_lookup_elem(&a2s_rules, &key);
+        #endif
 
         // Determine if this is a challenge request by checking 4 bytes (00000000/FFFFFFFF)
         #if defined A2S_NON_STEAM_SUPPORT || defined A2S_DUAL_CHALLENGE_SUPPORT

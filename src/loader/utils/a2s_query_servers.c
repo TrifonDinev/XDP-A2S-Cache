@@ -8,7 +8,6 @@
 #include <bpf/bpf.h>
 
 #include "common.h"
-#include "config.h"
 #include "a2s_defs.h"
 #include "helpers.h"
 
@@ -25,8 +24,14 @@ void *a2s_query_servers(void *arg)
   } queries[] =
   {
     { A2S_INFO_REQ, "A2S_INFO", ctx->xdp_maps.a2s_info, A2S_INFO_REQ_SIZE },
+
+    #ifdef A2S_PLAYER_ENABLE
     { A2S_PLAYER_REQ, "A2S_PLAYER", ctx->xdp_maps.a2s_player, A2S_PLAYER_REQ_SIZE },
+    #endif
+
+    #ifdef A2S_RULES_ENABLE
     { A2S_RULES_REQ, "A2S_RULES", ctx->xdp_maps.a2s_rules, A2S_RULES_REQ_SIZE }
+    #endif
   };
 
   enum
@@ -255,8 +260,14 @@ void *a2s_query_servers(void *arg)
         {
           case S2C_CHALLENGE: step = srv->current_j; break;
           case S2A_INFO_SRC: step = 0; break;
+
+          #ifdef A2S_PLAYER_ENABLE
           case S2A_PLAYER: step = 1; break;
+          #endif
+
+          #ifdef A2S_RULES_ENABLE
           case S2A_RULES: step = 2; break;
+          #endif
 
           default:
           #ifdef A2S_DEBUG

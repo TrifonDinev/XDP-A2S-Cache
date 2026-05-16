@@ -12,33 +12,6 @@
 // Use A2S_DEBUG only for debugging purposes and disable in production, A2S_DEBUG will significantly decrease performance!
 //#define A2S_DEBUG
 
-/*
-* USE_HW_UDP_CSUM_OFFLOAD
-*
-* When enabled, the network card (NIC) calculates the UDP checksum in hardware
-* instead of software calc_udp_csum().
-*
-* In this mode, the UDP checksum field is set to 0. This tells the NIC that
-* it should compute and fill in the correct checksum before transmitting the packet.
-*
-* When disabled, the checksum is calculated in software using calc_udp_csum()
-* before sending.
-*
-* ---------------------------------------------------------------------------
-* How to check offload support (Linux):
-*
-* For example, if your interface is ens3:
-* ethtool -k ens3 | grep -E "tx-checksumming|udp|checksum"
-* ---------------------------------------------------------------------------
-* Note: Exact feature names vary by NIC and driver.
-*
-* Offload support still depends on firmware, driver, and kernel configuration.
-* Always verify with ethtool, because it may be disabled even if supported.
-*
-* Disable this only if your NIC and driver doesn't support UDP checksum offloading.
-*/
-#define USE_HW_UDP_CSUM_OFFLOAD
-
 /**
 * Enables support for Non-Steam clients/emulators.
 *
@@ -70,6 +43,27 @@
 * Last tested/reviewed on: 01.05.2026
 */
 //#define A2S_DUAL_CHALLENGE_SUPPORT
+
+/**
+* A2S_PLAYER_ENABLE:
+* For those who want to drop A2S_PLAYER query, comment out the macro below.
+*
+* BEWARE: Some game tracking websites rely and on A2S_PLAYER, dropping/disabling,
+* may result in showing server as offline in some game tracking websites.
+*/
+#define A2S_PLAYER_ENABLE
+
+/**
+* A2S_RULES_ENABLE:
+* For those who want to drop A2S_RULES query, comment out the macro below.
+*
+* The fragmentation is guaranteed in CS 1.6, for example,
+* broken/deprecated in CS:GO since (1.32.3.0, Feb 21, 2014 update), incl. CS2, as far as I know.
+*
+* Not used or working in some games. You can edit the code to drop it and not query it at all.
+* I don't know who are still using it and where it is still needed.
+*/
+#define A2S_RULES_ENABLE
 
 /**
 * A2S_QUERY_TIME_SEC - Interval (in seconds) between A2S queries.
