@@ -12,3 +12,4 @@ typedef struct xdp_maps
 } xdp_maps_t;
 
 int get_maps(struct xdp_program *prog, xdp_maps_t *xdp_maps);
+int generate_and_inject_hash_key(struct xdp_program *prog);

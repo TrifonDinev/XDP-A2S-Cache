@@ -137,3 +137,48 @@ int get_maps(struct xdp_program *prog, xdp_maps_t *xdp_maps)
 
   return 0;
 }
+
+/**
+* Generates a key via hardware RDRAND and injects it into the eBPF object
+*
+* @param prog Pointer to the loaded XDP program object.
+* @return 0 on success, or a negative error code on failure.
+*/
+int generate_and_inject_hash_key(struct xdp_program *prog)
+{
+  // Get the BPF object from the XDP program
+  struct bpf_object *bpf_obj = xdp_program__bpf_obj(prog);
+
+  // Generate a hardware random key
+  uint64_t final_key;
+
+  __asm__ __volatile__(
+    "rdtsc; rdrand %0"
+    : "=r" (final_key)
+    :
+    : "rax", "rdx", "cc"
+  );
+
+  // Try to find the dedicated map by full name
+  struct bpf_map *key_map = bpf_object__find_map_by_name(bpf_obj, "xdpa2scache.rodata.hash_key");
+
+  // If not found, try the fallback short name or both options failed, resolve the error and exit
+  if (!key_map && !(key_map = bpf_object__find_map_by_name(bpf_obj, ".rodata.hash_key")))
+  {
+    int err = libbpf_get_error(key_map) ?: -ENOENT;
+    fprintf(stderr, "ERROR: Dedicated key section map not found: %s (code %d)\n", strerror(-err), err);
+    return err;
+  }
+
+  // Inject the key
+  int err = bpf_map__set_initial_value(key_map, &final_key, sizeof(final_key));
+
+  if (err < 0)
+  {
+    fprintf(stderr, "ERROR: Failed to inject hardware key: %s (code %d)\n", strerror(-err), err);
+    return err;
+  }
+
+  printf("Hash Key injected successfully into %s.\n", bpf_map__name(key_map));
+  return 0;
+}

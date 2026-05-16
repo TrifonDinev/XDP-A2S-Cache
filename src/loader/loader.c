@@ -35,6 +35,13 @@ int main()
     termination_handler(&ctx, 0);
   }
 
+  // Generate hash key for cookie (challenge)
+  if (generate_and_inject_hash_key(ctx.prog) != 0)
+  {
+    fprintf(stderr, "FATAL: Key injection into .rodata.hash_key failed. Aborting...\n");
+    termination_handler(&ctx, 0);
+  }
+
   // Attach XDP program to the network interface
   if (attach_xdp(ctx.prog, ctx.ifindex, 0) != 0)
   {

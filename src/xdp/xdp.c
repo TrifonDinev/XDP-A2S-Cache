@@ -1,13 +1,12 @@
-#include <stdint.h>
 #include <stdbool.h>
-#include <linux/in.h>
 #include <linux/bpf.h>
 #include <linux/if_ether.h>
+#include <linux/in.h>
 #include <linux/ip.h>
 #include <linux/udp.h>
 #include <bpf/bpf_helpers.h>
-#include <xdp/xdp_helpers.h>
 #include <xdp/prog_dispatcher.h>
+#include <xdp/xdp_helpers.h>
 
 #include "common.h"
 #include "config.h"
@@ -31,10 +30,9 @@ int xdpa2scache_program(struct xdp_md *ctx)
   void *data = (void *)(long)ctx->data;
   void *data_end = (void *)(long)ctx->data_end;
 
-  // Scan ethernet header
+  // Initialize and validate ethernet header
   struct ethhdr *eth = data;
 
-  // Check if the ethernet header is valid
   if (unlikely(eth + 1 > (struct ethhdr *)data_end))
   {
     return XDP_DROP;
@@ -46,10 +44,9 @@ int xdpa2scache_program(struct xdp_md *ctx)
     return XDP_PASS;
   }
 
-  // Initialize IP header
+  // Initialize and validate IP header
   struct iphdr *iph = (struct iphdr *)(data + sizeof(struct ethhdr));
 
-  // Validate IP header
   if (unlikely(iph + 1 > (struct iphdr *)data_end))
   {
     return XDP_DROP;
@@ -61,10 +58,9 @@ int xdpa2scache_program(struct xdp_md *ctx)
     return XDP_PASS;
   }
 
-  // Initialize UDP header
+  // Initialize and validate UDP header
   struct udphdr *udph = (struct udphdr *)(data + sizeof(struct ethhdr) + (iph->ihl * 4));
 
-  // Validate UDP header
   if (unlikely(udph + 1 > (struct udphdr *)data_end))
   {
     return XDP_DROP;
@@ -114,7 +110,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
 
         // A2S Debug: Log info query details, payload length, value size, and whether it's a challenge
         #ifdef A2S_DEBUG
-        bpf_printk("A2S Debug: A2S_INFO: Payload Length: %u, Value Size: %u, Is Challenge: %s\n",
+        bpf_printk("[A2S DEBUG] A2S_INFO: Payload Length: %u, Value Size: %u, Is Challenge: %s\n",
         payload_len, val ? val->size : 0, is_challenge ? "true" : "false");
         #endif
       }
@@ -125,11 +121,9 @@ int xdpa2scache_program(struct xdp_md *ctx)
       if (payload_len == 9)
       {
         // Lookup the A2S_PLAYER or A2S_RULES response in the map using the server key
-        val = (query_type == A2S_PLAYER)
-        ? bpf_map_lookup_elem(&a2s_player, &key)
-        : bpf_map_lookup_elem(&a2s_rules, &key);
+        val = (query_type == A2S_PLAYER) ? bpf_map_lookup_elem(&a2s_player, &key) : bpf_map_lookup_elem(&a2s_rules, &key);
 
-        // Determine if this is a challenge request by checking 4 bytes (00000000) starting at the 6th byte of the payload
+        // Determine if this is a challenge request by checking 4 bytes (00000000/FFFFFFFF)
         #if defined A2S_NON_STEAM_SUPPORT || defined A2S_DUAL_CHALLENGE_SUPPORT
         is_challenge = (*(__u32 *)(payload + 5) == 0x00000000 || *(__u32 *)(payload + 5) == 0xFFFFFFFF);
         #else
@@ -138,18 +132,18 @@ int xdpa2scache_program(struct xdp_md *ctx)
 
         // A2S Debug: Log player/rules query details, payload length, value size, and whether it's a challenge
         #ifdef A2S_DEBUG
-        bpf_printk("A2S Debug: A2S_%s: Payload Length: %u, Value Size: %u, Is Challenge: %s\n",
+        bpf_printk("[A2S DEBUG] A2S_%s: Payload Length: %u, Value Size: %u, Is Challenge: %s\n",
         (query_type == A2S_PLAYER) ? "PLAYER" : "RULES", payload_len, val ? val->size : 0, is_challenge ? "true" : "false");
         #endif
       }
       break;
 
       // Return XDP_PASS by default, since we need to allow some other things for certain games starting with the same payload!
-      // You can DROP here if there is nothing expected than the above A2S queries, starting with the same payload (FF FF FF FF)
+      // You can DROP here if there is nothing expected than the above A2S queries
       default:
-      // A2S Debug: Log unknown query type, so you can understand more easily what else is being used
+      // A2S Debug: Log unknown query type to easily understand what else is being used
       #ifdef A2S_DEBUG
-      bpf_printk("A2S Debug: Unknown Query Type: 0x%02x, passing packet.\n", query_type);
+      bpf_printk("[A2S DEBUG] Unknown Query Type: 0x%02x, passing packet.\n", query_type);
       #endif
       return XDP_PASS;
     }
@@ -159,85 +153,75 @@ int xdpa2scache_program(struct xdp_md *ctx)
     {
       // A2S Debug: Log that no matching response was found for this key
       #ifdef A2S_DEBUG
-      bpf_printk("A2S Debug: Value not found for key (IP: %pI4, Port: %d), dropping packet.\n", &key.ip, ntohs(key.port));
+      bpf_printk("[A2S DEBUG] Value not found for key (IP: %pI4, Port: %d), dropping packet.\n", &key.ip, ntohs(key.port));
       #endif
       return XDP_DROP;
     }
 
     // A2S Debug: Log whether we are preparing a challenge or data response
     #ifdef A2S_DEBUG
-    bpf_printk("A2S Debug: Preparing %s response.\n", is_challenge ? "cookie (challenge)" : "data");
+    bpf_printk("[A2S DEBUG] Preparing %s response.\n", is_challenge ? "cookie (challenge)" : "data");
     #endif
 
     // Check if it is challenge
     if (is_challenge)
     {
-      // Create a cookie (challenge) based on the IP and UDP header
-      __u32 challenge = create_cookie(iph, udph);
+      // Adjust packet tail to match the required payload length
+      payload_len = (__s32)(data_end - payload);
 
-      // Prepare the response to send back
-      __u8 response[] = {0xFF, 0xFF, 0xFF, 0xFF, 0x41, 0xFF, 0xFF, 0xFF, 0xFF};
-      memcpy(response + 5, &challenge, 4);
-
-      // Adjust the payload size only when A2S_NON_STEAM_SUPPORT macro is not defined and the query type is A2S_INFO
-      #ifndef A2S_NON_STEAM_SUPPORT
-      if (query_type == A2S_INFO)
+      if (bpf_xdp_adjust_tail(ctx, 9 - payload_len) != 0)
       {
-        if (bpf_xdp_adjust_tail(ctx, sizeof(response) - payload_len) != 0)
-        {
-          // A2S Debug: Log a failure message when adjusting tail size fails
-          #ifdef A2S_DEBUG
-          bpf_printk("A2S Challenge: Failed to adjust tail size for response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
-          sizeof(response), payload_len, sizeof(response) - payload_len);
-          #endif
-          return XDP_DROP;
-        }
-
-        // Reinitialize pointers again because of the tail adjustment
-        data = (void *)(long)ctx->data;
-        data_end = (void *)(long)ctx->data_end;
-
-        eth = data;
-        if (unlikely(eth + 1 > (struct ethhdr *)data_end))
-        {
-          return XDP_DROP;
-        }
-
-        iph = (struct iphdr *)(data + sizeof(struct ethhdr));
-        if (unlikely(iph + 1 > (struct iphdr *)data_end))
-        {
-          return XDP_DROP;
-        }
-
-        udph = (struct udphdr *)(data + sizeof(struct ethhdr) + (iph->ihl * 4));
-        if (unlikely(udph + 1 > (struct udphdr *)data_end))
-        {
-          return XDP_DROP;
-        }
-
-        payload = (void *)(udph + 1);
-        if (payload + 9 > data_end)
-        {
-          // A2S Debug: Log insufficient space for payload when writing 9 byte response
-          #ifdef A2S_DEBUG
-          bpf_printk("A2S Challenge: Insufficient space for 9 byte payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
-          #endif
-          return XDP_DROP;
-        }
+        // A2S Debug: Log a failure message when adjusting tail size fails
+        #ifdef A2S_DEBUG
+        bpf_printk("[A2S DEBUG] Failed to adjust tail size for challenge response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
+        9, payload_len, 9 - payload_len);
+        #endif
+        return XDP_DROP;
       }
-      #endif
 
-      // Write the response to the packet payload
-      memcpy(payload, response, sizeof(response));
+      // Reinitialize pointers again because of the tail adjustment
+      data = (void *)(long)ctx->data;
+      data_end = (void *)(long)ctx->data_end;
+
+      eth = data;
+      if (unlikely(eth + 1 > (struct ethhdr *)data_end))
+      {
+        return XDP_DROP;
+      }
+
+      iph = (struct iphdr *)(data + sizeof(struct ethhdr));
+      if (unlikely(iph + 1 > (struct iphdr *)data_end))
+      {
+        return XDP_DROP;
+      }
+
+      udph = (struct udphdr *)(data + sizeof(struct ethhdr) + (iph->ihl * 4));
+      if (unlikely(udph + 1 > (struct udphdr *)data_end))
+      {
+        return XDP_DROP;
+      }
+
+      payload = (void *)(udph + 1);
+      if (payload + 9 > data_end)
+      {
+        // A2S Debug: Log insufficient space for payload when writing 9 byte response
+        #ifdef A2S_DEBUG
+        bpf_printk("[A2S DEBUG] Insufficient space for 9 byte challenge payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
+        #endif
+        return XDP_DROP;
+      }
+
+      // Write the response to the packet payload and create a cookie (challenge) based on the IP and UDP header
+      memcpy(payload, "\xFF\xFF\xFF\xFF\x41", 5);
+      *(__u32 *)(payload + 5) = create_cookie(iph, udph);
 
       // A2S Debug: Log the crafted cookie (challenge) and the full 9 byte response
       // NOTE: Cookie (challenge) is in little endian
       #ifdef A2S_DEBUG
-      bpf_printk("A2S Challenge: Crafted cookie (challenge) 0x%x, Full Response: 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x\n",
-      challenge, response[0], response[1], response[2], response[3], response[4], response[5], response[6], response[7], response[8]);
+      bpf_printk("[A2S DEBUG] Crafted cookie (challenge) 0x%x\n", *(__u32 *)(payload + 5));
 
       // A2S Debug: Log source and destination IPs and ports for the A2S challenge packet that we are sending
-      bpf_printk("Sending A2S Challenge: Source IP: %pI4, Source Port: %d, Destination IP: %pI4, Destination Port: %d\n",
+      bpf_printk("[A2S DEBUG] Sending A2S Challenge: Source IP: %pI4, Source Port: %d, Destination IP: %pI4, Destination Port: %d\n",
       &iph->daddr, ntohs(udph->dest), &iph->saddr, ntohs(udph->source));
       #endif
 
@@ -247,20 +231,16 @@ int xdpa2scache_program(struct xdp_md *ctx)
       swap_udp(udph);
 
       udph->len = htons(sizeof(struct udphdr) + 9);
-
-      #ifdef USE_HW_UDP_CSUM_OFFLOAD
       udph->check = 0;
-      #else
       udph->check = calc_udp_csum(iph, udph, data_end);
-      #endif
 
-      __u16 old_len = iph->tot_len;
-      iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct udphdr) + 9);
-
+      __u16 old_tot_len = iph->tot_len;
       __u8 old_ttl = iph->ttl;
+
+      iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct udphdr) + 9);
       iph->ttl = 64;
 
-      iph->check = csum_diff4(old_len, iph->tot_len, iph->check);
+      iph->check = csum_diff4(old_tot_len, iph->tot_len, iph->check);
       iph->check = csum_diff4(old_ttl, iph->ttl, iph->check);
 
       return XDP_TX;
@@ -277,9 +257,9 @@ int xdpa2scache_program(struct xdp_md *ctx)
         // Make sure we dont go out of range of the packet
         if (unlikely(cookie + 1 > data_end))
         {
-          // A2S Debug: Log insufficient space for 1 byte cookie (challenge)
+          // A2S Debug: Log insufficient space for 4 byte cookie (challenge)
           #ifdef A2S_DEBUG
-          bpf_printk("A2S Data: Insufficient space for 1 byte cookie (challenge) payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
+          bpf_printk("[A2S DEBUG] Insufficient space for 4 byte cookie (challenge) payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
           #endif
           return XDP_DROP;
         }
@@ -290,7 +270,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
           // A2S Debug: Log that the cookie was invalid and that we are dropping the packet
           // NOTE: Cookie (challenge) is in little endian
           #ifdef A2S_DEBUG
-          bpf_printk("A2S Data: Cookie (challenge) is invalid - 0x%x, dropping packet.\n", *cookie);
+          bpf_printk("[A2S DEBUG] Cookie (challenge) is invalid - 0x%x, dropping packet.\n", *cookie);
           #endif
           return XDP_DROP;
         }
@@ -298,7 +278,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
         // A2S Debug: Log that the cookie (challenge) received is valid
         // NOTE: Cookie (challenge) is in little endian
         #ifdef A2S_DEBUG
-        bpf_printk("A2S Data: Cookie (challenge) is valid - 0x%x, proceeding with next steps.\n", *cookie);
+        bpf_printk("[A2S DEBUG] Cookie (challenge) is valid - 0x%x, proceeding with next steps.\n", *cookie);
         #endif
       }
       #else
@@ -307,9 +287,9 @@ int xdpa2scache_program(struct xdp_md *ctx)
       // Make sure we dont go out of range of the packet
       if (unlikely(cookie + 1 > data_end))
       {
-        // A2S Debug: Log insufficient space for 1 byte cookie (challenge)
+        // A2S Debug: Log insufficient space for 4 byte cookie (challenge)
         #ifdef A2S_DEBUG
-        bpf_printk("A2S Data: Insufficient space for 1 byte cookie (challenge) payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
+        bpf_printk("[A2S DEBUG] Insufficient space for 4 byte cookie (challenge) payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
         #endif
         return XDP_DROP;
       }
@@ -320,7 +300,7 @@ int xdpa2scache_program(struct xdp_md *ctx)
         // A2S Debug: Log that the cookie was invalid and that we are dropping the packet
         // NOTE: Cookie (challenge) is in little endian
         #ifdef A2S_DEBUG
-        bpf_printk("A2S Data: Cookie (challenge) is invalid - 0x%x, dropping packet.\n", *cookie);
+        bpf_printk("[A2S DEBUG] Cookie (challenge) is invalid - 0x%x, dropping packet.\n", *cookie);
         #endif
         return XDP_DROP;
       }
@@ -328,16 +308,18 @@ int xdpa2scache_program(struct xdp_md *ctx)
       // A2S Debug: Log that the cookie (challenge) received is valid
       // NOTE: Cookie (challenge) is in little endian
       #ifdef A2S_DEBUG
-      bpf_printk("A2S Data: Cookie (challenge) is valid - 0x%x, proceeding with next steps.\n", *cookie);
+      bpf_printk("[A2S DEBUG] Cookie (challenge) is valid - 0x%x, proceeding with next steps.\n", *cookie);
       #endif
       #endif
 
-      // Resize packet to fit payload
+      // Adjust packet tail to match the required payload length
+      payload_len = (__s32)(data_end - payload);
+
       if (bpf_xdp_adjust_tail(ctx, val->size - payload_len) != 0)
       {
         // A2S Debug: Log a failure message when adjusting tail size fails
         #ifdef A2S_DEBUG
-        bpf_printk("A2S Data: Failed to adjust tail size for response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
+        bpf_printk("[A2S DEBUG] Failed to adjust tail size for data response. Response size: %d bytes, Payload length: %d bytes, Adjustment required: %d bytes, dropping packet.\n",
         val->size, payload_len, val->size - payload_len);
         #endif
         return XDP_DROP;
@@ -368,30 +350,53 @@ int xdpa2scache_program(struct xdp_md *ctx)
       payload = (void *)(udph + 1);
       if (unlikely(payload + 1 > data_end))
       {
-        // A2S Debug: Log insufficient space for 1 byte payload after tail adjustment
+        // A2S Debug: Log insufficient space for at least 1 byte of payload after tail adjustment
         #ifdef A2S_DEBUG
-        bpf_printk("A2S Data: Insufficient space for 1 byte payload (Available space: %ld bytes), dropping packet.\n", data_end - payload);
+        bpf_printk("[A2S DEBUG] Payload invalid after tail adjustment (need at least 1 byte), dropping packet.\n");
         #endif
         return XDP_DROP;
       }
 
       // Write the data into the payload we will send
+      // This is really ugly, but it is better from copying byte by byte for now
+      // Currently sticking with 8, 4, 2, 1, because of Debian 12 (kernel 6.1),
+      // in 2027 I will try to optimize this part more and drop Debian 12
       __u32 val_data_size = val->size < sizeof(val->data) ? val->size : sizeof(val->data);
+      __u32 i = 0;
 
-      for (__u32 i = 0; i < val_data_size; i++)
+      // 1. 8 bytes copy
+      for (; i + 8 <= val_data_size; i += 8)
       {
-        if (payload + (i + 1) > data_end)
-        {
-          break;
-        }
+        if (payload + i + 8 > data_end)
+        break;
 
+        *(__u64 *)(payload + i) = *(__u64 *)(val->data + i);
+      }
+
+      // 4 bytes copy
+      if (i + 4 <= val_data_size && payload + i + 4 <= data_end)
+      {
+        *(__u32 *)(payload + i) = *(__u32 *)(val->data + i);
+        i += 4;
+      }
+
+      // 2 bytes copy
+      if (i + 2 <= val_data_size && payload + i + 2 <= data_end)
+      {
+        *(__u16 *)(payload + i) = *(__u16 *)(val->data + i);
+        i += 2;
+      }
+
+      // 1 byte copy
+      if (i + 1 <= val_data_size && payload + i + 1 <= data_end)
+      {
         ((__u8 *)payload)[i] = val->data[i];
       }
 
       // A2S Debug: Log the crafted payload size and packet source/destination information
       #ifdef A2S_DEBUG
-      bpf_printk("A2S Data: Crafted %d bytes of data to send.\n", val_data_size);
-      bpf_printk("Sending A2S Data: Source IP: %pI4, Source Port: %d, Destination IP: %pI4, Destination Port: %d\n",
+      bpf_printk("[A2S DEBUG] Crafted %d bytes of data to send.\n", val_data_size);
+      bpf_printk("[A2S DEBUG] Sending A2S Data: Source IP: %pI4, Source Port: %d, Destination IP: %pI4, Destination Port: %d\n",
       &iph->daddr, ntohs(udph->dest), &iph->saddr, ntohs(udph->source));
       #endif
 
@@ -401,20 +406,16 @@ int xdpa2scache_program(struct xdp_md *ctx)
       swap_udp(udph);
 
       udph->len = htons(sizeof(struct udphdr) + val_data_size);
-
-      #ifdef USE_HW_UDP_CSUM_OFFLOAD
       udph->check = 0;
-      #else
       udph->check = calc_udp_csum(iph, udph, data_end);
-      #endif
 
-      __u16 old_len = iph->tot_len;
-      iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct udphdr) + val_data_size);
-
+      __u16 old_tot_len = iph->tot_len;
       __u8 old_ttl = iph->ttl;
+
+      iph->tot_len = htons(sizeof(struct iphdr) + sizeof(struct udphdr) + val_data_size);
       iph->ttl = 64;
 
-      iph->check = csum_diff4(old_len, iph->tot_len, iph->check);
+      iph->check = csum_diff4(old_tot_len, iph->tot_len, iph->check);
       iph->check = csum_diff4(old_ttl, iph->ttl, iph->check);
 
       return XDP_TX;

@@ -8,17 +8,17 @@
 * @param old_checksum The original checksum.
 *
 * @return The updated 16-bit checksum.
-**/
-static __always_inline uint16_t csum_diff4(uint32_t old_value, uint32_t new_value, uint16_t old_checksum) 
+*/
+static __always_inline __u16 csum_diff4(__u32 old_value, __u32 new_value, __u16 old_checksum)
 {
   // Initialize sum with the complement of the old checksum, only considering the lower 16 bits.
-  uint32_t sum = ~old_checksum & 0xFFFF;
+  __u32 sum = ~old_checksum & 0xFFFF;
 
   // Add the complement of the lower 16 bits of the old value to the sum.
   sum += ~old_value & 0xFFFF;
 
   // Add the upper 16 bits of the old value to the sum.
-  sum += (old_value >> 16);
+  sum += old_value >> 16;
 
   // Add the lower 16 bits of the new value to the sum.
   sum += new_value & 0xFFFF;
@@ -26,12 +26,11 @@ static __always_inline uint16_t csum_diff4(uint32_t old_value, uint32_t new_valu
   // Add the upper 16 bits of the new value to the sum.
   sum += new_value >> 16;
 
-  // Combine the lower and upper parts of the sum and keep only the lower 16 bits.
-  // This step handles any overflow by adding it back into the sum.
+  // Fold 32-bit sum to 16 bits and add carry (RFC 1071)
   sum = (sum & 0xFFFF) + (sum >> 16);
 
-  // Return the complement of the sum
-  return (uint16_t)~sum;
+  // (__u16) keeps the low 16 bits after the final fold
+  return (__u16)~(sum + (sum >> 16));
 }
 
 /**
@@ -41,12 +40,11 @@ static __always_inline uint16_t csum_diff4(uint32_t old_value, uint32_t new_valu
 * @param udph Pointer to UDP header.
 * @param data_end Pointer to packet's data end.
 *
-* @note All credit goes to FedeParola from https://github.com/iovisor/bcc/issues/2463
-* With some edit from me - Trifon Dinev - https://github.com/TrifonDinev/XDP-A2S-Cache , https://trifondinev.com
+* @note All credit goes to FedeParola from https://github.com/iovisor/bcc/issues/2463#issuecomment-718800510
+* With some edit from me - Trifon Dinev - https://trifondinev.com - https://github.com/TrifonDinev/XDP-A2S-Cache
 *
 * @return 16-bit UDP checksum.
-**/
-#ifndef USE_HW_UDP_CSUM_OFFLOAD
+*/
 static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udph, void *data_end)
 {
   __u32 csum_buffer = 0;
@@ -60,40 +58,37 @@ static __always_inline __u16 calc_udp_csum(struct iphdr *iph, struct udphdr *udp
   csum_buffer += (__u16)iph->protocol << 8;
   csum_buffer += udph->len;
 
-  /* Mask 0x07FF (2047) bounds the scalar range to avoid verifier 1M instruction explosion.
-   * Observed with VirtIO drivers and may also occur on other virtualized drivers/VMs.
-   * Ensures correct behavior for small packets on VMware "vmxnet3" and physical NICs.
-   * Tested on: I350, X550, X710, E810, KVM/QEMU VirtIO, VMware vmxnet3.
-   * NOTE: Adjust the 0x07FF mask and the 1480 cap if jumbo frames are used.
-  */
-  __u16 udp_len = ntohs(udph->len) & 0x07FF;
-
-  // Cap length at 1480 bytes to ensure compliance with standard Ethernet MTU
-  if (udp_len > 1480)
-  {
-    udp_len = 1480;
-  }
-
   // Compute checksum on UDP header + payload
-  for (int i = 0; i < udp_len; i += 2)
+  // 1480 is the max UDP size for a 1500 MTU
+  for (int i = 0; i < 1480; i += 4)
   {
-    if ((void *)(buf + 1) > data_end)
+    if ((void *)(buf + 2) > data_end)
     break;
 
-    // Verifier safety check for kernels < 6.8
-    if ((void *)buf <= data_end)
-    {
-      csum_buffer += *buf;
-      buf++;
-    }
+    __u32 val = *(__u32 *)buf;
+
+    csum_buffer += (val & 0xFFFF);
+    csum_buffer += (val >> 16);
+    buf += 2;
   }
 
-  // Handle the last byte if payload length is not 2-byte aligned
+  // 2. Handle 2 bytes
+  if ((void *)(buf + 1) <= data_end)
+  {
+    csum_buffer += *buf;
+    buf++;
+  }
+
+  // 3. Handle the last byte
   if ((void *)buf + 1 <= data_end)
   {
     csum_buffer += *(__u8 *)buf;
   }
 
-  return ~((__u16)csum_buffer + (__u16)(csum_buffer >> 16));
+  // Fold 32-bit sum to 16 bits and add carry (RFC 1071)
+  csum_buffer = (csum_buffer & 0xFFFF) + (csum_buffer >> 16);
+
+  // (__u16) keeps the low 16 bits
+  // Return 0xFFFF if the UDP checksum becomes 0x0000 (RFC 768)
+  return ((__u16)~(csum_buffer + (csum_buffer >> 16))) ?: 0xFFFF;
 }
-#endif
