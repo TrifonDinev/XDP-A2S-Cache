@@ -8,7 +8,9 @@ My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Co
 >
 > - Userspace Fetcher: Queries servers every 5s (`A2S_QUERY_TIME_SEC`) and updates BPF maps when something changes. Works fine, but could be improved to be smarter and more efficient.
 > ---
-> Some games may only use `A2S_INFO` and `A2S_PLAYER` queries (or even just `A2S_INFO`), so you can edit the code to drop the unnecessary queries and use only what’s needed.
+> Some games may only use `A2S_INFO` and `A2S_PLAYER` queries (or even just `A2S_INFO`).
+\
+You can use `A2S_PLAYER_ENABLE` and `A2S_RULES_ENABLE` macros to drop the unnecessary queries and use only what is needed.
 >
 > Useful information on fragmentation (current state):
 > - `A2S_INFO`
@@ -22,7 +24,7 @@ My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Co
 >   - The fragmentation is guaranteed in CS 1.6, for example, broken/deprecated in CS:GO since (1.32.3.0, Feb 21, 2014 update), incl. CS2, as far as I know.
 >   - Not used or working in some games. You can edit the code to drop it and not query it at all (I don't know who are still using it and where it is still needed).
 >
-> To avoid incomplete responses at the moment, keep packet sizes below `A2S_MAX_SIZE` (currently set to `1400` bytes).
+> To avoid incomplete responses at the moment, keep packet sizes below `A2S_MAX_SIZE` (currently set to 1400 bytes).
 
 ## Supporting and tested on:
 | A2S Query Type     | Description                                  |
@@ -36,7 +38,10 @@ My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Co
 | Half-Life, Counter-Strike 1.6, Counter-Strike: Condition Zero, Sven Co-op, Day of Defeat, Team Fortress Classic | GoldSrc |
 | Half-Life 2, Counter-Strike: Source, Counter-Strike: Global Offensive, Team Fortress 2, Left 4 Dead, Left 4 Dead 2, Garry's Mod, Day of Defeat: Source | Source 1 |
 | Counter-Strike 2                   | Source 2 |
-| Rust                               | Unity |
+| Rust, Valheim, 7 Days to Die       | Unity |
+| Cod4x                              | IW 3  |
+| Quake Live                         | id Tech 3 |
+| ARK: Survival Evolved              | Unreal Engine 4 |
 | Maybe more games...                | which are not tested...|
 
 ## Requirements:
@@ -51,7 +56,7 @@ My old and basic XDP A2S Cache, designed primarily for Counter-Strike 1.6 and Co
 # Install dependencies.
 sudo apt install -y clang llvm build-essential libconfig-dev libelf-dev libpcap-dev m4 gcc-multilib
 
-# We need tools for our kernel since we need BPFTool.
+# We need tools for our kernel (BPFTool).
 # If there are no available, try to build BPFTool from source (https://github.com/libbpf/bpftool)
 # For Debian 12/13 (which I mainly use) I build it from source
 sudo apt install -y linux-tools-$(uname -r)
@@ -80,7 +85,7 @@ sudo apt install -y linux-tools-$(uname -r)
 
 3. Upon start, the program will attempt to load in Driver mode (Native). If there is no driver support ([NIC driver XDP support list](https://github.com/iovisor/bcc/blob/master/docs/kernel-versions.md#xdp)), it will fall back to SKB mode (Generic).
 
-4. The program will query the servers every 5 seconds for data by default (this interval can be adjusted by modifying `A2S_QUERY_TIME_SEC`).
+4. The userspace program will query the servers every 5 seconds for data by default (this interval can be adjusted by modifying `A2S_QUERY_TIME_SEC`).
 
 ## FAQ:
 Q: There is libxdp error when starting the program:
